@@ -46,6 +46,36 @@ def play_sfx(name, vol=1.0):
 
 
 # ---------------------------------------------------------------------------
+# Background Music (BGM) Manager - Japanese Combat Music
+# ---------------------------------------------------------------------------
+current_bgm_track = None
+
+
+def play_bgm(track_name, vol=0.65):
+    global current_bgm_track
+    if current_bgm_track == track_name:
+        return
+    try:
+        p = os.path.join(ASSETS, "sfx", f"{track_name}.wav")
+        if os.path.exists(p):
+            pygame.mixer.music.load(p)
+            pygame.mixer.music.set_volume(vol)
+            pygame.mixer.music.play(-1)
+            current_bgm_track = track_name
+    except Exception:
+        pass
+
+
+def stop_bgm(fade_ms=500):
+    global current_bgm_track
+    try:
+        pygame.mixer.music.fadeout(fade_ms)
+    except Exception:
+        pass
+    current_bgm_track = None
+
+
+# ---------------------------------------------------------------------------
 # Typography (Gang of Three font from Fruit Ninja with graceful fallback)
 # ---------------------------------------------------------------------------
 FONT_PATH = os.path.join(ASSETS, "go3v2.ttf")
@@ -289,6 +319,22 @@ bsp_feet = int(159 * spear_scale)
 bsp_center = bsp_w // 2
 boss_spear_frames = [pygame.transform.smoothscale(f, (bsp_w, bsp_h)) for f in raw_boss_spear]
 
+# 6. Boss Ascent (Aerial Slam Leap: Image 1, 5 rows x 6 cols = 30 frames)
+raw_boss_ascent = extract_grid_frames("boss_ascent.png", 5, 6)
+basc_w = int(170.67 * boss_scale)
+basc_h = int(170.6 * boss_scale)
+basc_feet = int(165 * boss_scale)
+basc_center = basc_w // 2
+boss_ascent_frames = [pygame.transform.smoothscale(f, (basc_w, basc_h)) for f in raw_boss_ascent]
+
+# 7. Boss Descent (Aerial Slam Crash: Image 2, 5 rows x 6 cols = 30 frames)
+raw_boss_descent = extract_grid_frames("boss_descent.png", 5, 6)
+bdesc_w = int(170.67 * boss_scale)
+bdesc_h = int(170.6 * boss_scale)
+bdesc_feet = int(162 * boss_scale)
+bdesc_center = bdesc_w // 2
+boss_descent_frames = [pygame.transform.smoothscale(f, (bdesc_w, bdesc_h)) for f in raw_boss_descent]
+
 
 # ---------------------------------------------------------------------------
 # Projectiles
@@ -359,7 +405,7 @@ boss = {
     "y": GROUND_Y,
     "vx": 0.0,                  # Smooth velocity easing for fluid movement
     "facing_right": False,      # initially facing left towards player
-    "state": "idle",            # "idle", "walk", "smash", "spear", "kunai", "enrage_intro", "stunned"
+    "state": "idle",            # "idle", "walk", "smash", "spear", "kunai", "enrage_intro", "stunned", "ascend", "airborne", "descend"
     "frame_idx": 0,
     "anim_time": 0.0,           # Continuous animation timer for ultra-smooth fluid transitions
     "tick_count": 0,
@@ -378,6 +424,9 @@ boss = {
     "smash_hit": False,
     "enraged_triggered": False,
     "enrage_intro_timer": 0,    # 330 ticks = 5.5s intro!
+    "slam_target_x": int(W * 0.5),
+    "slam_timer": 0,
+    "slam_hit": False,
 }
 
 ground_shake_timer = 0
@@ -477,6 +526,9 @@ def reset_round_entities():
     boss["smash_hit"] = False
     boss["enraged_triggered"] = False
     boss["enrage_intro_timer"] = 0
+    boss["slam_target_x"] = int(W * 0.5)
+    boss["slam_timer"] = 0
+    boss["slam_hit"] = False
 
 
 def start_next_round():
@@ -741,8 +793,11 @@ GUIDE_SECTIONS = [
         "lines": [
             "  • Phase I  (100% - 66% HP): Tactical pacing. Spear throws at range, greatsword slams close.",
             "  • Phase II (66% - 33% HP) : Red Mist awakens! Magistrate speeds up with +25% damage.",
-            "  • Phase III (<= 33% HP / Enraged <= 10%): 5.5-second dark roar transition! Attacks 70% faster,",
-            "                              healing flask locked, red glowing outline active!",
+            "  • Phase III (<= 33% HP / Enraged <= 10%): 5.5s dark roar! Attacks 70% faster, healing locked.",
+            "  • Boss Invulnerability    : The Magistrate is completely immune to damage during phase transitions",
+            "                              and while leaping into the sky (Aerial Slam).",
+            "  • Aerial Sky Slam Attack  : Magistrate leaps into the sky! A red light indicator appears at the",
+            "                              top of the screen 1s before descent. Dodge or parry the crash AOE shockwave!",
             "  • Balance Adjustments     : Boss sword damage decreased by 20%, spear damage decreased by 10%.",
         ]
     },
@@ -832,9 +887,12 @@ while running:
             # The ONLY remaining testing key: [T] Deletes 200 HP from the boss
             if game_state == "PLAYING":
                 if event.key == pygame.K_t:
-                    boss["hp"] = max(0, boss["hp"] - 200)
-                    boss["posture"] = min(100.0, boss["posture"] + 25.0)
-                    play_sfx("slash_hit", 0.9)
+                    if boss["state"] in ("enrage_intro", "ascend", "airborne", "descend"):
+                        play_sfx("block_wood", 0.8)
+                    else:
+                        boss["hp"] = max(0, boss["hp"] - 200)
+                        boss["posture"] = min(100.0, boss["posture"] + 25.0)
+                        play_sfx("slash_hit", 0.9)
 
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             mouse_clicked = True
@@ -846,6 +904,7 @@ while running:
     # 1. State: MENU
     # -----------------------------------------------------------------------
     if game_state == "MENU":
+        play_bgm("bgm_normal", vol=0.45)
         screen.blit(bg, (0, 0))
 
         dim = pygame.Surface((W, H), pygame.SRCALPHA)
@@ -934,6 +993,12 @@ while running:
             boss_phase = 2
         else:
             boss_phase = 1
+
+        # Japanese Combat Music (Normal loop, intensified during Enraged mode / Phase 3)
+        if is_enraged or boss_phase == 3:
+            play_bgm("bgm_enraged", vol=0.75)
+        else:
+            play_bgm("bgm_normal", vol=0.65)
 
         # Enraged Mode Transition (5.5s dark roar sequence)
         if is_enraged and not b["enraged_triggered"]:
@@ -1058,7 +1123,11 @@ while running:
                     dist = abs(p["x"] - b["x"])
                     facing_boss = (b["x"] > p["x"] and p["facing_right"]) or (b["x"] < p["x"] and not p["facing_right"])
                     if dist < int(W * 0.16) and facing_boss:
-                        if b["is_stunned"]:
+                        # Boss Invulnerability during phase transitions & aerial slam
+                        if b["state"] in ("enrage_intro", "ascend", "airborne", "descend"):
+                            spawn_sparks(b["x"], b["y"] - boss_h * 0.5, count=6, is_golden=False)
+                            play_sfx("block_wood", 0.7)
+                        elif b["is_stunned"]:
                             # CRITICAL STRIKE!
                             b["hp"] = max(0, b["hp"] - 250)
                             b["is_stunned"] = False
@@ -1322,6 +1391,83 @@ while running:
                         b["tick_count"] = 0
                         b["projectile_spawned"] = False
 
+        elif b["state"] == "ascend":
+            # 1.0 second ascent (60 ticks) - boss is invulnerable!
+            b["vx"] = 0.0
+            b["slam_timer"] -= 1
+            progress = (60 - b["slam_timer"]) / 60.0
+            b["frame_idx"] = min(len(boss_ascent_frames) - 1, int(progress * len(boss_ascent_frames)))
+
+            # Boss leaps upward into the heavens
+            if progress > 0.35:
+                b["y"] = GROUND_Y - int(((progress - 0.35) / 0.65) * (H * 0.85))
+
+            if b["slam_timer"] <= 0:
+                b["state"] = "airborne"
+                b["slam_timer"] = 90  # 1.5 seconds in air (indicator appears 1.0s before descent)
+                b["y"] = -400
+                # Randomize landing location near player
+                offset = random.choice([-1, 1]) * random.randint(30, int(W * 0.16))
+                b["slam_target_x"] = max(int(W * 0.16), min(int(W * 0.86), p["x"] + offset))
+
+        elif b["state"] == "airborne":
+            b["vx"] = 0.0
+            b["y"] = -400
+            b["slam_timer"] -= 1
+            if b["slam_timer"] <= 0:
+                b["state"] = "descend"
+                b["slam_timer"] = 60  # 1.0 second descent
+                b["frame_idx"] = 0
+                b["x"] = b["slam_target_x"]
+                b["y"] = GROUND_Y
+                b["slam_hit"] = False
+                b["facing_right"] = (p["x"] > b["x"])
+
+        elif b["state"] == "descend":
+            # 1.0 second descent (60 ticks) - boss is invulnerable!
+            b["vx"] = 0.0
+            b["y"] = GROUND_Y
+            b["slam_timer"] -= 1
+            progress = (60 - b["slam_timer"]) / 60.0
+            b["frame_idx"] = min(len(boss_descent_frames) - 1, int(progress * len(boss_descent_frames)))
+
+            # Descent crash impact happens around frame 17-20 (progress >= 0.58)
+            if progress >= 0.58 and not b["slam_hit"]:
+                b["slam_hit"] = True
+                ground_shake_timer = 120
+                ground_shake_intensity = 26.0
+                play_sfx("ground_slam", 1.0)
+                spawn_sparks(b["x"], GROUND_Y, count=35, is_golden=True)
+
+                # AOE damage to player
+                dist_to_player = abs(b["x"] - p["x"])
+                if dist_to_player < int(W * 0.22):
+                    if p["state"] == "dodge":
+                        pass  # clean dodge through i-frames
+                    elif p["state"] == "parry" and p["frame_idx"] <= 14:
+                        # Perfect parry!
+                        play_sfx("parry_metal", 1.0)
+                        spawn_sparks(p["x"], p["y"] - player_h * 0.5, count=28, is_golden=True)
+                        b["posture"] = min(b["max_posture"], b["posture"] + 30.0)
+                        b["posture_decay_delay"] = 0
+                    elif p["state"] == "parry":
+                        # Block (60% damage mitigation)
+                        play_sfx("block_wood", 0.9)
+                        slam_dmg = 45 if boss_phase == 3 else (36 if boss_phase == 2 else 28)
+                        p["hp"] = max(0, p["hp"] - int(slam_dmg * 0.40))
+                        spawn_sparks(p["x"], p["y"] - player_h * 0.5, count=10, is_golden=False)
+                    else:
+                        # Direct crash impact!
+                        slam_dmg = 45 if boss_phase == 3 else (36 if boss_phase == 2 else 28)
+                        p["hp"] = max(0, p["hp"] - slam_dmg)
+                        play_sfx("slash_hit", 1.0)
+
+            if b["slam_timer"] <= 0:
+                b["state"] = "idle"
+                b["frame_idx"] = 0
+                b["tick_count"] = 0
+                b["y"] = GROUND_Y
+
         else:
             # Boss Attack Decisions
             b["attack_cooldown"] -= 1.0 / 60.0
@@ -1341,17 +1487,24 @@ while running:
                 b["vx"] = 0.0
 
                 if is_far:
-                    b["state"] = "spear"
+                    # At range: Spear throw or Sky Leap (Aerial Slam)
+                    chosen_atk = random.choices(["spear", "ascend"], weights=[0.65, 0.35])[0]
+                    b["state"] = chosen_atk
                     b["frame_idx"] = 0
                     b["tick_count"] = 0
                     b["projectile_spawned"] = False
+                    if chosen_atk == "ascend":
+                        b["slam_timer"] = 60
                 else:
-                    chosen_atk = random.choice(["smash", "kunai"])
+                    # In melee: Greatsword Smash, Kunai, or Sky Leap (Aerial Slam)
+                    chosen_atk = random.choices(["smash", "kunai", "ascend"], weights=[0.45, 0.25, 0.30])[0]
                     b["state"] = chosen_atk
                     b["frame_idx"] = 0
                     b["tick_count"] = 0
                     b["projectile_spawned"] = False
                     b["smash_hit"] = False
+                    if chosen_atk == "ascend":
+                        b["slam_timer"] = 60
 
             else:
                 # Fluid Patrol & Motion Smoothing
@@ -1404,11 +1557,16 @@ while running:
                 if proj["owner"] == "player":
                     if abs(proj["x"] - b["x"]) < int(boss_h * 0.28) and abs(proj["y"] - (b["y"] - boss_h * 0.50)) < int(boss_h * 0.40):
                         proj["active"] = False
-                        b["hp"] = max(0, b["hp"] - proj["damage"])
-                        b["posture"] = min(b["max_posture"], b["posture"] + 5.0)
-                        b["posture_decay_delay"] = 0
-                        spawn_sparks(proj["x"], proj["y"], count=10, is_golden=False)
-                        play_sfx("slash_hit", 0.7)
+                        # Boss Invulnerability during transitions and aerial slam
+                        if b["state"] in ("enrage_intro", "ascend", "airborne", "descend"):
+                            spawn_sparks(proj["x"], proj["y"], count=6, is_golden=False)
+                            play_sfx("block_wood", 0.6)
+                        else:
+                            b["hp"] = max(0, b["hp"] - proj["damage"])
+                            b["posture"] = min(b["max_posture"], b["posture"] + 5.0)
+                            b["posture_decay_delay"] = 0
+                            spawn_sparks(proj["x"], proj["y"], count=10, is_golden=False)
+                            play_sfx("slash_hit", 0.7)
 
                 elif proj["owner"] == "boss":
                     if abs(proj["x"] - p["x"]) < int(player_h * 0.28) and abs(proj["y"] - (p["y"] - player_h * 0.50)) < int(player_h * 0.40):
@@ -1436,6 +1594,7 @@ while running:
 
         # --- BEST OF 5 ROUND OUTCOME DETECTION ---
         if b["hp"] <= 0:
+            stop_bgm(400)
             player_round_wins += 1
             if player_round_wins >= 3:
                 game_state = "MATCH_VICTORY"
@@ -1443,6 +1602,7 @@ while running:
                 game_state = "ROUND_WON"
 
         elif p["hp"] <= 0:
+            stop_bgm(400)
             boss_round_wins += 1
             if boss_round_wins >= 3:
                 game_state = "MATCH_DEFEAT"
@@ -1516,6 +1676,7 @@ while running:
         screen.blit(p_sprite, (p_draw_x, p_draw_y))
 
         # 2. Render Boss (The Hollow Magistrate)
+        b_sprite = None
         if b["state"] == "enrage_intro":
             b_sprite = boss_enrage_frames[b["frame_idx"] % len(boss_enrage_frames)]
             b_draw_x = int(b["x"] - be_center) + shake_x
@@ -1524,7 +1685,7 @@ while running:
             b_sprite = boss_walk_frames[b["frame_idx"] % len(boss_walk_frames)]
             b_draw_x = int(b["x"] - bw_center) + shake_x
             b_draw_y = int(b["y"] - bw_feet) + shake_y
-        elif b["state"] == "idle" or b["state"] == "stunned":
+        elif b["state"] in ("idle", "stunned"):
             b_sprite = boss_idle_frames[b["frame_idx"] % len(boss_idle_frames)]
             b_draw_x = int(b["x"] - bi_center) + shake_x
             b_draw_y = int(b["y"] - bi_feet) + shake_y
@@ -1536,19 +1697,66 @@ while running:
             b_sprite = boss_spear_frames[b["frame_idx"] % len(boss_spear_frames)]
             b_draw_x = int(b["x"] - bsp_center) + shake_x
             b_draw_y = int(b["y"] - bsp_feet) + shake_y
+        elif b["state"] == "ascend":
+            b_sprite = boss_ascent_frames[b["frame_idx"] % len(boss_ascent_frames)]
+            b_draw_x = int(b["x"] - basc_center) + shake_x
+            b_draw_y = int(b["y"] - basc_feet) + shake_y
+        elif b["state"] == "airborne":
+            b_sprite = None
+        elif b["state"] == "descend":
+            b_sprite = boss_descent_frames[b["frame_idx"] % len(boss_descent_frames)]
+            b_draw_x = int(b["x"] - bdesc_center) + shake_x
+            b_draw_y = int(b["y"] - bdesc_feet) + shake_y
 
-        if not b["facing_right"]:
-            b_sprite = pygame.transform.flip(b_sprite, True, False)
+        # Aerial Slam Red Light Indicator (Appears 1 second before descent and during descent)
+        if (b["state"] == "airborne" and b["slam_timer"] <= 60) or (b["state"] == "descend"):
+            ind_x = int(b["slam_target_x"]) + shake_x
+            pulse = abs(math.sin(frame_count * 0.32))
 
-        if is_enraged and b["state"] != "enrage_intro":
-            pulse = abs(math.sin(frame_count * 0.28))
-            outline_alpha = int(140 + 115 * pulse)
-            mask = pygame.mask.from_surface(b_sprite)
-            outline_surf = mask.to_surface(setcolor=(255, 25, 25, outline_alpha), unsetcolor=(0, 0, 0, 0))
-            for ox, oy in [(-3, 0), (3, 0), (0, -3), (0, 3), (-2, -2), (2, 2)]:
-                screen.blit(outline_surf, (b_draw_x + ox, b_draw_y + oy))
+            # 1. Vertical red light pillar from the heavens
+            beam_w = int(24 + 18 * pulse)
+            beam_surf = pygame.Surface((beam_w, H), pygame.SRCALPHA)
+            for bi in range(beam_w // 2):
+                alpha = int((65 + 75 * pulse) * (1.0 - (bi / (beam_w / 2.0))))
+                pygame.draw.line(beam_surf, (255, 30, 30, alpha), (beam_w // 2 - bi, 0), (beam_w // 2 - bi, H))
+                pygame.draw.line(beam_surf, (255, 30, 30, alpha), (beam_w // 2 + bi, 0), (beam_w // 2 + bi, H))
+            # Bright inner ray
+            pygame.draw.line(beam_surf, (255, 235, 235, 220), (beam_w // 2, 0), (beam_w // 2, H), 3)
+            screen.blit(beam_surf, (ind_x - beam_w // 2, 0))
 
-        screen.blit(b_sprite, (b_draw_x, b_draw_y))
+            # 2. Red Light Warning Indicator beacon at the top of the screen
+            beacon_y = 4
+            beacon_sz = int(18 + 7 * pulse)
+            pts = [
+                (ind_x - beacon_sz, beacon_y),
+                (ind_x + beacon_sz, beacon_y),
+                (ind_x, beacon_y + int(beacon_sz * 1.8))
+            ]
+            pygame.draw.polygon(screen, (255, 35, 35), pts)
+            pygame.draw.polygon(screen, (255, 240, 200), pts, 2)
+            pygame.draw.circle(screen, (255, 255, 255), (ind_x, beacon_y + int(beacon_sz * 0.65)), max(2, int(4 * pulse + 2)))
+
+            # 3. Ground Impact Target Reticle
+            ring_rad = int(W * 0.09)
+            ring_surf = pygame.Surface((ring_rad * 2 + 10, int(ring_rad * 0.6) + 10), pygame.SRCALPHA)
+            r_rect = pygame.Rect(5, 5, ring_rad * 2, int(ring_rad * 0.6))
+            pygame.draw.ellipse(ring_surf, (255, 40, 40, int(110 + 90 * pulse)), r_rect, 3)
+            pygame.draw.line(ring_surf, (255, 220, 220, int(130 + 80 * pulse)), (ring_rad + 5, 2), (ring_rad + 5, int(ring_rad * 0.6) + 8), 2)
+            screen.blit(ring_surf, (ind_x - ring_rad - 5, GROUND_Y - int(ring_rad * 0.3) + shake_y))
+
+        if b_sprite is not None:
+            if not b["facing_right"]:
+                b_sprite = pygame.transform.flip(b_sprite, True, False)
+
+            if is_enraged and b["state"] not in ("enrage_intro", "ascend", "descend"):
+                pulse = abs(math.sin(frame_count * 0.28))
+                outline_alpha = int(140 + 115 * pulse)
+                mask = pygame.mask.from_surface(b_sprite)
+                outline_surf = mask.to_surface(setcolor=(255, 25, 25, outline_alpha), unsetcolor=(0, 0, 0, 0))
+                for ox, oy in [(-3, 0), (3, 0), (0, -3), (0, 3), (-2, -2), (2, 2)]:
+                    screen.blit(outline_surf, (b_draw_x + ox, b_draw_y + oy))
+
+            screen.blit(b_sprite, (b_draw_x, b_draw_y))
 
         if b["is_stunned"]:
             st_text = font_stun_banner.render("★ POSTURE BROKEN — CRITICAL STRIKE! ★", True, (255, 220, 60))
