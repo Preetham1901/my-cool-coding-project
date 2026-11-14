@@ -188,7 +188,7 @@ for ex in range(186, 194):
 idle_open = pygame.transform.smoothscale(raw_idle_open, (frame_w, frame_h))
 idle_blink = pygame.transform.smoothscale(raw_idle_blink, (frame_w, frame_h))
 
-# 3. New Player Kunai Animation (Image 1: player_kunai_new.png, 5 rows x 6 cols = 30 frames)
+# 3. Player Kunai Animation (Image 1: player_kunai_new.png, 5 rows x 6 cols = 30 frames)
 raw_player_kunai = extract_grid_frames("player_kunai_new.png", 5, 6)
 pk_scale = player_h / 140.0
 pk_w = int(171 * pk_scale)
@@ -199,11 +199,13 @@ player_kunai_frames = [pygame.transform.smoothscale(f, (pk_w, pk_h)) for f in ra
 
 # ---------------------------------------------------------------------------
 # Boss (Titan) Sprites & Animations (120% size of player)
+# Note: Boss source sheets natively face RIGHT.
+# When facing LEFT towards player, flip horizontally!
 # ---------------------------------------------------------------------------
 boss_h = int(player_h * 1.20)
 boss_scale = boss_h / 148.0
 
-# 1. Boss Idle (Image 4: red aura, boss_idle.png, 5 rows x 6 cols = 30 frames)
+# 1. Boss Idle (Image 4: red aura, boss_idle.png, cleaned transparency)
 raw_boss_idle = extract_grid_frames("boss_idle.png", 5, 6)
 bi_w = int(170.67 * boss_scale)
 bi_h = int(184.8 * boss_scale)
@@ -211,7 +213,7 @@ bi_feet = int(165 * boss_scale)
 bi_center = bi_w // 2
 boss_idle_frames = [pygame.transform.smoothscale(f, (bi_w, bi_h)) for f in raw_boss_idle]
 
-# 2. Boss Heavy Smash (Image 2: greatsword smash with screen shake, boss_smash.png, 5 rows x 6 cols = 30 frames)
+# 2. Boss Heavy Smash (Image 2: greatsword smash with screen shake)
 raw_boss_smash = extract_grid_frames("boss_smash.png", 5, 6)
 bs_w = int(170.67 * boss_scale)
 bs_h = int(170.6 * boss_scale)
@@ -219,7 +221,7 @@ bs_feet = int(162 * boss_scale)
 bs_center = bs_w // 2
 boss_smash_frames = [pygame.transform.smoothscale(f, (bs_w, bs_h)) for f in raw_boss_smash]
 
-# 3. Boss Spear Throw (Image 3: long-range spear throw, boss_spear.png, 5 rows x 6 cols = 30 frames)
+# 3. Boss Spear Throw (Image 3: long-range spear throw, cleaned transparency)
 raw_boss_spear = extract_grid_frames("boss_spear.png", 5, 6)
 bsp_w = int(170.67 * boss_scale)
 bsp_h = int(184.8 * boss_scale)
@@ -236,7 +238,7 @@ kh = int(kw * (188.0 / 948.0))
 kunai_item_right = pygame.transform.smoothscale(raw_kunai_item, (kw, kh))
 kunai_item_left = pygame.transform.flip(kunai_item_right, True, False)
 
-# Spear projectile surface (scaled from spear image)
+# Spear projectile surface
 raw_spear_sub = raw_boss_spear[16].subsurface(pygame.Rect(int(raw_boss_spear[16].get_width() * 0.45), int(raw_boss_spear[16].get_height() * 0.25), int(raw_boss_spear[16].get_width() * 0.50), int(raw_boss_spear[16].get_height() * 0.30)))
 sp_w = int(boss_h * 0.45)
 sp_h = int(sp_w * (raw_spear_sub.get_height() / raw_spear_sub.get_width()))
@@ -288,16 +290,20 @@ boss = {
     "attack_cooldown": random.uniform(3.0, 5.0),    # interval 3-5s for boss attacks
     "projectile_spawned": False,
     "smash_hit": False,
+    "enraged_override": False,
 }
 
-screen_shake = 0.0
+# 2.0 Seconds Ground Shake (120 frames at 60 FPS)
+ground_shake_timer = 0
+ground_shake_intensity = 0.0
 
 
 def reset_battle():
     """Resets both player, boss, and combat systems to initial state."""
-    global projectiles, screen_shake
+    global projectiles, ground_shake_timer, ground_shake_intensity
     projectiles.clear()
-    screen_shake = 0.0
+    ground_shake_timer = 0
+    ground_shake_intensity = 0.0
 
     player["hp"] = player["max_hp"]
     player["displayed_hp"] = float(player["max_hp"])
@@ -326,6 +332,7 @@ def reset_battle():
     boss["attack_cooldown"] = random.uniform(3.0, 5.0)
     boss["projectile_spawned"] = False
     boss["smash_hit"] = False
+    boss["enraged_override"] = False
 
 
 # ---------------------------------------------------------------------------
@@ -347,12 +354,14 @@ GUIDE_SECTIONS = [
             "  [ W ]          : Jump (Vertical leap with gravity)",
             "  [ A ]          : Move Left (Facing directional turn)",
             "  [ D ]          : Move Right",
-            "  [ Left Shift ] : Dodge (Forward evasive roll, invulnerable to projectiles)",
+            "  [ Left Shift ] : Dodge (Forward evasive roll, invulnerable to projectiles & shockwaves)",
             "  [ Right Shift ]: Sword Slash (High-impact close-range combo)",
             "  [ Q ]          : Throw Kunai (Launches projectile in facing direction)",
             "  [ F ]          : Parry (Defensive counter-stance; blocks attacks/projectiles)",
             "  [ G ]          : Ultimate Ability",
             "  [ Spacebar ]   : Pause Menu (Time Rewind 10s, Reset, Keybinds)",
+            "  [ E ]          : Toggle Enraged Mode (Test red glowing outline & 70% faster attacks)",
+            "  [ S ]          : Trigger Boss Sword Slam (Test 2-second screen shake)",
             "  [ K ]          : Self-Damage Test (-25 HP to test Defeat screen)",
             "  [ T ]          : Strike Titan Test (-200 HP to test Victory screen)",
             "  [ Esc ]        : Return to Menu / Exit Game",
@@ -364,18 +373,19 @@ GUIDE_SECTIONS = [
         "lines": [
             "  • Parry Risk/Reward : Precise parry reflects attacks safely.",
             "                        MISSING parry timing inflicts HIGHER damage penalty than not parrying!",
-            "  • Kunai Projectiles : Extended from hitbox towards facing direction at high velocity.",
-            "  • Screen Shake      : Titan's heavy sword slam rattles the ground violently upon impact.",
+            "  • Sword Smash Dodge : Titan raises his sword with telegraphed wind-up (1.5x time), giving time to dodge.",
+            "  • 2-Second Quake    : When Titan's sword impacts the ground, a violent ground shake lasts for 2 seconds!",
+            "  • Enrage State      : At <= 10% HP, Titan's outline pulses with flashing red fury, and attacks become 70% faster!",
         ]
     },
     {
         "title": "BOSS: TITAN AI & BEHAVIOR",
         "color": (255, 180, 80),
         "lines": [
-            "  • Red Aura Idle     : Titan's signature red aura pulses continuously during stance and movement.",
+            "  • Facing Direction  : Titan dynamically turns to face you when attacking or turning.",
+            "  • Red Aura Idle     : Titan's signature red aura pulses continuously with clean transparent alpha.",
             "  • Random Patrol     : Titan walks and switches directions at intervals between 1 to 20 seconds.",
-            "  • Attack Intervals  : Initiates an assault every 3 to 5 seconds.",
-            "  • Distance Check    : If far from player (> 1/4 screen width), Titan EXCLUSIVELY throws his piercing Spear.",
+            "  • Distance Check    : If far from player (> 1/4 screen width), Titan EXCLUSIVELY throws his Spear.",
             "                        If close to player (<= 1/4 screen width), Titan randomly slams with Greatsword or throws Kunai.",
         ]
     }
@@ -403,7 +413,7 @@ def draw_button(surface, rect, text, is_hover, primary_col=(180, 35, 35), border
     surface.blit(txt_surf, txt_rect)
 
 
-def draw_health_bars(surface, p, b):
+def draw_health_bars(surface, p, b, is_enraged):
     """Draws the player's red health bar on the left and the boss's bar on the right."""
     p["displayed_hp"] += (p["hp"] - p["displayed_hp"]) * 0.1
     b["displayed_hp"] += (b["hp"] - b["displayed_hp"]) * 0.1
@@ -443,8 +453,8 @@ def draw_health_bars(surface, p, b):
 
     # Boss Health Bar (Right)
     bx = W - int(W * 0.04) - bar_w
-    b_title = "Titan" if b["hp"] > 100 else "Titan [ENRAGED]"
-    b_name = font_bar_name.render(b_title, True, (255, 80, 80) if b["hp"] <= 100 else (240, 220, 170))
+    b_title = "Titan [ENRAGED]" if is_enraged else "Titan"
+    b_name = font_bar_name.render(b_title, True, (255, 60, 60) if is_enraged else (240, 220, 170))
     b_name_shadow = font_bar_name.render(b_title, True, (20, 15, 10))
     b_name_rect = b_name.get_rect(topright=(bx + bar_w, top_y - 30))
     surface.blit(b_name_shadow, (b_name_rect.x + 2, b_name_rect.y + 2))
@@ -460,7 +470,7 @@ def draw_health_bars(surface, p, b):
 
     b_pct = max(0.0, min(1.0, b["hp"] / b["max_hp"]))
     if b_pct > 0:
-        b_color = (235, 40, 40) if b["hp"] <= 100 else (180, 35, 55)
+        b_color = (245, 30, 30) if is_enraged else (180, 35, 55)
         b_fill_rect = pygame.Rect(bx, top_y, int(bar_w * b_pct), bar_h)
         pygame.draw.rect(surface, b_color, b_fill_rect, border_radius=4)
         highlight_rect = pygame.Rect(bx, top_y, int(bar_w * b_pct), bar_h // 2)
@@ -468,7 +478,8 @@ def draw_health_bars(surface, p, b):
         hl.fill((255, 255, 255, 45))
         surface.blit(hl, highlight_rect)
 
-    pygame.draw.rect(surface, (215, 140, 70) if b["hp"] > 100 else (255, 60, 60), b_bg_rect, width=2, border_radius=4)
+    border_color = (255, 40, 40) if is_enraged else (215, 140, 70)
+    pygame.draw.rect(surface, border_color, b_bg_rect, width=2, border_radius=4)
 
     b_val_surf = font_bar_val.render(f"{int(b['hp'])} / {b['max_hp']} HP", True, (255, 245, 225))
     b_val_rect = b_val_surf.get_rect(topright=(bx + bar_w - 8, top_y + 4))
@@ -541,6 +552,15 @@ while running:
                     player["hp"] = max(0, player["hp"] - 25)
                 elif event.key == pygame.K_t:
                     boss["hp"] = max(0, boss["hp"] - 200)
+                elif event.key == pygame.K_e:
+                    # Toggle Enraged mode test
+                    boss["enraged_override"] = not boss["enraged_override"]
+                elif event.key == pygame.K_s:
+                    # Trigger boss sword slam test
+                    boss["state"] = "smash"
+                    boss["frame_idx"] = 0
+                    boss["tick_count"] = 0
+                    boss["smash_hit"] = False
 
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if game_state == "MENU":
@@ -569,12 +589,14 @@ while running:
             controls_scroll_y = max(0, min(max_scroll_y, controls_scroll_y - event.y * 30))
 
     # ══════════════════════════════════════════════════════════════════════
-    # SCREEN SHAKE CALCULATION
+    # SCREEN SHAKE CALCULATION (Exact 2.0 Seconds = 120 Frames)
     # ══════════════════════════════════════════════════════════════════════
-    if screen_shake > 0:
-        shake_x = int(random.uniform(-screen_shake, screen_shake))
-        shake_y = int(random.uniform(-screen_shake, screen_shake))
-        screen_shake = max(0.0, screen_shake - 0.75)
+    if ground_shake_timer > 0:
+        ground_shake_timer -= 1
+        progress = ground_shake_timer / 120.0
+        cur_intensity = ground_shake_intensity * (progress ** 0.70)
+        shake_x = int(random.uniform(-cur_intensity, cur_intensity))
+        shake_y = int(random.uniform(-cur_intensity * 0.75, cur_intensity * 0.75))
     else:
         shake_x = 0
         shake_y = 0
@@ -711,6 +733,9 @@ while running:
         p = player
         b = boss
 
+        # Check Enrage Condition (<= 10% HP or override test)
+        is_enraged = (b["hp"] <= b["max_hp"] * 0.10) or b["enraged_override"]
+
         # Check Victory / Defeat Transitions
         if b["hp"] <= 0:
             b["hp"] = 0
@@ -794,7 +819,6 @@ while running:
                 p["frame_idx"] = 0
                 p["tick_count"] = 0
                 p["kunai_spawned"] = False
-                # Face direction player is already facing (preserved)
             else:
                 # ── Horizontal Movement (A / D) ───────────────────────────
                 dx = 0
@@ -826,7 +850,7 @@ while running:
                             p["is_blinking"] = False
                             p["blink_timer"] = random.randint(120, 200)
 
-            # ── Jump (W) ──────────────────────────────────────────────────
+            # Jump (W)
             if keys[pygame.K_w] and p["on_ground"]:
                 p["vy"] = JUMP_FORCE
                 p["on_ground"] = False
@@ -844,77 +868,98 @@ while running:
 
         # ── BOSS (TITAN) AI & BEHAVIOR ────────────────────────────────────
         if b["state"] in ("smash", "spear", "kunai"):
-            b["tick_count"] += 1
-            b["frame_idx"] += 1
-
+            # Attack speed: 70% faster when enraged!
+            # Sword smash takes 1.5x time during wind-up when normal so it's telegraphed and easier to dodge
             if b["state"] == "smash":
-                # Ground impact shake at frames 15-22
-                if 15 <= b["frame_idx"] <= 20:
-                    screen_shake = 16.0
-                    # Shockwave damage if player close and grounded
-                    if not b["smash_hit"]:
-                        dist_to_player = abs(b["x"] - p["x"])
-                        if dist_to_player < int(W * 0.16) and p["on_ground"]:
+                tick_interval = 1 if is_enraged else (2 if b["frame_idx"] < 17 else 1)
+            else:
+                tick_interval = 1 if is_enraged else 2
+
+            b["tick_count"] += 1
+            if b["tick_count"] >= tick_interval:
+                b["tick_count"] = 0
+                b["frame_idx"] += 1
+
+                if b["state"] == "smash":
+                    # Sword slams ground at frame 16 -> triggers EXACT 2.0 SECONDS OF SCREEN SHAKE!
+                    if b["frame_idx"] == 16:
+                        global ground_shake_timer, ground_shake_intensity
+                        ground_shake_timer = 120    # 120 frames at 60 FPS = 2.0 full seconds
+                        ground_shake_intensity = 22.0
+
+                        if not b["smash_hit"]:
                             b["smash_hit"] = True
-                            if p["state"] != "dodge":
-                                p["hp"] = max(0, p["hp"] - 25)
+                            dist_to_player = abs(b["x"] - p["x"])
+                            if dist_to_player < int(W * 0.18) and p["on_ground"]:
+                                if p["state"] != "dodge":
+                                    dmg = 45 if is_enraged else 30
+                                    p["hp"] = max(0, p["hp"] - dmg)
 
-                if b["frame_idx"] >= len(boss_smash_frames):
-                    b["state"] = "idle"
-                    b["frame_idx"] = 0
-                    b["smash_hit"] = False
+                    if b["frame_idx"] >= len(boss_smash_frames):
+                        b["state"] = "idle"
+                        b["frame_idx"] = 0
+                        b["tick_count"] = 0
+                        b["smash_hit"] = False
 
-            elif b["state"] == "spear":
-                # Spear release at frame 16
-                if b["frame_idx"] == 16 and not b["projectile_spawned"]:
-                    b["projectile_spawned"] = True
-                    sp_vx = (KUNAI_SPEED + 4) if b["facing_right"] else -(KUNAI_SPEED + 4)
-                    spawn_x = b["x"] + (int(boss_h * 0.3) if b["facing_right"] else -int(boss_h * 0.3))
-                    spawn_y = b["y"] - int(boss_h * 0.52)
-                    projectiles.append({
-                        "x": spawn_x,
-                        "y": spawn_y,
-                        "vx": sp_vx,
-                        "type": "spear",
-                        "owner": "boss",
-                        "facing_right": b["facing_right"],
-                        "damage": 30,
-                        "active": True,
-                    })
+                elif b["state"] == "spear":
+                    # Spear release at frame 16
+                    if b["frame_idx"] == 16 and not b["projectile_spawned"]:
+                        b["projectile_spawned"] = True
+                        base_sp_speed = KUNAI_SPEED + 4
+                        sp_speed = int(base_sp_speed * 1.35) if is_enraged else base_sp_speed
+                        sp_vx = sp_speed if b["facing_right"] else -sp_speed
+                        spawn_x = b["x"] + (int(boss_h * 0.3) if b["facing_right"] else -int(boss_h * 0.3))
+                        spawn_y = b["y"] - int(boss_h * 0.52)
+                        projectiles.append({
+                            "x": spawn_x,
+                            "y": spawn_y,
+                            "vx": sp_vx,
+                            "type": "spear",
+                            "owner": "boss",
+                            "facing_right": b["facing_right"],
+                            "damage": 35 if is_enraged else 25,
+                            "active": True,
+                        })
 
-                if b["frame_idx"] >= len(boss_spear_frames):
-                    b["state"] = "idle"
-                    b["frame_idx"] = 0
-                    b["projectile_spawned"] = False
+                    if b["frame_idx"] >= len(boss_spear_frames):
+                        b["state"] = "idle"
+                        b["frame_idx"] = 0
+                        b["tick_count"] = 0
+                        b["projectile_spawned"] = False
 
-            elif b["state"] == "kunai":
-                # Boss throws kunai at frame 14
-                if b["frame_idx"] == 14 and not b["projectile_spawned"]:
-                    b["projectile_spawned"] = True
-                    k_vx = KUNAI_SPEED if b["facing_right"] else -KUNAI_SPEED
-                    spawn_x = b["x"] + (int(boss_h * 0.25) if b["facing_right"] else -int(boss_h * 0.25))
-                    spawn_y = b["y"] - int(boss_h * 0.50)
-                    projectiles.append({
-                        "x": spawn_x,
-                        "y": spawn_y,
-                        "vx": k_vx,
-                        "type": "kunai",
-                        "owner": "boss",
-                        "facing_right": b["facing_right"],
-                        "damage": 20,
-                        "active": True,
-                    })
+                elif b["state"] == "kunai":
+                    # Boss throws kunai at frame 14
+                    if b["frame_idx"] == 14 and not b["projectile_spawned"]:
+                        b["projectile_spawned"] = True
+                        base_k_speed = KUNAI_SPEED
+                        k_speed = int(base_k_speed * 1.35) if is_enraged else base_k_speed
+                        k_vx = k_speed if b["facing_right"] else -k_speed
+                        spawn_x = b["x"] + (int(boss_h * 0.25) if b["facing_right"] else -int(boss_h * 0.25))
+                        spawn_y = b["y"] - int(boss_h * 0.50)
+                        projectiles.append({
+                            "x": spawn_x,
+                            "y": spawn_y,
+                            "vx": k_vx,
+                            "type": "kunai",
+                            "owner": "boss",
+                            "facing_right": b["facing_right"],
+                            "damage": 25 if is_enraged else 18,
+                            "active": True,
+                        })
 
-                if b["frame_idx"] >= len(boss_spear_frames):
-                    b["state"] = "idle"
-                    b["frame_idx"] = 0
-                    b["projectile_spawned"] = False
+                    if b["frame_idx"] >= len(boss_spear_frames):
+                        b["state"] = "idle"
+                        b["frame_idx"] = 0
+                        b["tick_count"] = 0
+                        b["projectile_spawned"] = False
 
         else:
-            # Boss Attack Decision (Interval 3-5 seconds)
+            # Boss Attack Decision (Interval 3-5 seconds, 70% FASTER when enraged: 0.9-1.5s!)
             b["attack_cooldown"] -= 1.0 / 60.0
             if b["attack_cooldown"] <= 0:
-                b["attack_cooldown"] = random.uniform(3.0, 5.0)
+                base_cd = random.uniform(3.0, 5.0)
+                b["attack_cooldown"] = base_cd * 0.30 if is_enraged else base_cd
+
                 dist = abs(b["x"] - p["x"])
                 is_far = dist > (W * 0.25)  # More than 1/4 horizontal screen width away
 
@@ -925,12 +970,14 @@ while running:
                     # Far away: exclusively throw spear
                     b["state"] = "spear"
                     b["frame_idx"] = 0
+                    b["tick_count"] = 0
                     b["projectile_spawned"] = False
                 else:
                     # Close range: randomly pick between greatsword smash or kunai throw
                     chosen_atk = random.choice(["smash", "kunai"])
                     b["state"] = chosen_atk
                     b["frame_idx"] = 0
+                    b["tick_count"] = 0
                     b["projectile_spawned"] = False
                     b["smash_hit"] = False
 
@@ -942,24 +989,31 @@ while running:
                     b["walk_dir"] = random.choice([-1, 0, 1])
 
                 if b["walk_dir"] != 0:
-                    b["x"] += b["walk_dir"] * 2.0
+                    walk_spd = 3.2 if is_enraged else 2.0
+                    b["x"] += b["walk_dir"] * walk_spd
                     b["facing_right"] = (b["walk_dir"] > 0)
-                    # Stay within right-side battle arena bounds
+
+                    # Stay within battle arena bounds
                     min_bx = int(W * 0.18)
                     max_bx = int(W * 0.94)
                     if b["x"] < min_bx:
                         b["x"] = min_bx
                         b["walk_dir"] = 1
+                        b["facing_right"] = True
                     elif b["x"] > max_bx:
                         b["x"] = max_bx
                         b["walk_dir"] = -1
+                        b["facing_right"] = False
                     b["state"] = "walk"
                 else:
                     b["state"] = "idle"
+                    # When standing, turn to face player
+                    b["facing_right"] = (p["x"] > b["x"])
 
                 # Advance continuous red aura idle animation
                 b["tick_count"] += 1
-                if b["tick_count"] >= 2:
+                idle_speed = 1 if is_enraged else 2
+                if b["tick_count"] >= idle_speed:
                     b["tick_count"] = 0
                     b["frame_idx"] = (b["frame_idx"] + 1) % len(boss_idle_frames)
 
@@ -976,25 +1030,22 @@ while running:
                 continue
 
             if proj["owner"] == "player":
-                # Check collision with Boss
+                # Collision with Boss
                 if abs(proj["x"] - b["x"]) < int(boss_h * 0.28) and abs(proj["y"] - (b["y"] - boss_h * 0.5)) < int(boss_h * 0.5):
                     b["hp"] = max(0, b["hp"] - proj["damage"])
                     proj["active"] = False
 
             elif proj["owner"] == "boss":
-                # Check collision with Player
+                # Collision with Player
                 if abs(proj["x"] - p["x"]) < int(player_h * 0.25) and abs(proj["y"] - (p["y"] - player_h * 0.5)) < int(player_h * 0.5):
                     if p["state"] == "dodge":
-                        # Evasively rolled under projectile!
-                        pass
+                        pass  # Evasively rolled under!
                     elif p["state"] == "parry":
-                        # Parried! Blocks damage safely
-                        proj["active"] = False
+                        proj["active"] = False  # Parried!
                     else:
                         p["hp"] = max(0, p["hp"] - proj["damage"])
                         proj["active"] = False
 
-        # Filter out inactive projectiles
         projectiles = [proj for proj in projectiles if proj["active"]]
 
         # ── RENDER CHARACTERS & PROJECTILES ───────────────────────────────
@@ -1047,9 +1098,21 @@ while running:
             b_draw_x = int(b["x"] - bsp_center) + shake_x
             b_draw_y = int(b["y"] - bsp_feet) + shake_y
 
-        # Note: Boss images natively face left, so if facing_right is True, flip horizontally!
-        if b["facing_right"]:
+        # Boss source images natively face RIGHT.
+        # If facing_right is False (facing LEFT towards player), flip horizontally!
+        if not b["facing_right"]:
             b_sprite = pygame.transform.flip(b_sprite, True, False)
+
+        # ── ENRAGED RED FLASHING OUTLINE ──────────────────────────────────
+        if is_enraged:
+            # Flashing red outline indicating fury
+            pulse = abs(math.sin(frame_count * 0.28))
+            outline_alpha = int(140 + 115 * pulse)
+            mask = pygame.mask.from_surface(b_sprite)
+            outline_surf = mask.to_surface(setcolor=(255, 25, 25, outline_alpha), unsetcolor=(0, 0, 0, 0))
+            # Blit outline slightly expanded around boss silhouette
+            for ox, oy in [(-3, 0), (3, 0), (0, -3), (0, 3), (-2, -2), (2, 2), (-2, 2), (2, -2)]:
+                screen.blit(outline_surf, (b_draw_x + ox, b_draw_y + oy))
 
         screen.blit(b_sprite, (b_draw_x, b_draw_y))
 
@@ -1063,7 +1126,7 @@ while running:
                 screen.blit(sp_img, (int(proj["x"] - sp_img.get_width() // 2) + shake_x, int(proj["y"] - sp_img.get_height() // 2) + shake_y))
 
         # 4. Render Health Bars at Top (Kept steady for UI clarity)
-        draw_health_bars(screen, p, b)
+        draw_health_bars(screen, p, b, is_enraged)
 
     elif game_state == "VICTORY":
         overlay = pygame.Surface((W, H), pygame.SRCALPHA)
