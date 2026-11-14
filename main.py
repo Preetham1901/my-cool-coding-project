@@ -4,10 +4,16 @@ import random
 import pygame
 
 # ---------------------------------------------------------------------------
-# Initialisation
+# Initialisation & Audio Setup
 # ---------------------------------------------------------------------------
 pygame.init()
 pygame.font.init()
+
+try:
+    pygame.mixer.pre_init(44100, -16, 1, 512)
+    pygame.mixer.init()
+except Exception:
+    pass
 
 screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
 pygame.display.set_caption("Haven Hackathon - Shinobi: Legend of Zhao")
@@ -18,9 +24,60 @@ ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
 
 
 # ---------------------------------------------------------------------------
-# Asset Loading Helpers (with full alpha preservation and opacity enforcement)
+# Audio (SFX) Manager
 # ---------------------------------------------------------------------------
+SFX = {}
+for s_name in ["parry_metal", "slash_hit", "ground_slam", "kunai_throw", "heal_spell", "block_wood", "posture_break"]:
+    try:
+        p = os.path.join(ASSETS, "sfx", f"{s_name}.wav")
+        if os.path.exists(p):
+            SFX[s_name] = pygame.mixer.Sound(p)
+    except Exception:
+        pass
 
+
+def play_sfx(name, vol=1.0):
+    if name in SFX:
+        try:
+            SFX[name].set_volume(vol)
+            SFX[name].play()
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Typography (Gang of Three font from Fruit Ninja with graceful fallback)
+# ---------------------------------------------------------------------------
+FONT_PATH = os.path.join(ASSETS, "go3v2.ttf")
+
+
+def get_font(size):
+    if os.path.exists(FONT_PATH):
+        try:
+            return pygame.font.Font(FONT_PATH, size)
+        except Exception:
+            pass
+    return pygame.font.SysFont(["georgia", "cinzel", "arial"], size, bold=True)
+
+
+font_title = get_font(int(H * 0.055))
+font_sub = get_font(int(H * 0.024))
+font_bar_name = get_font(int(H * 0.026))
+font_bar_val = get_font(int(H * 0.017))
+font_hud_info = get_font(int(H * 0.017))
+font_btn = get_font(int(H * 0.023))
+font_guide_head = get_font(int(H * 0.034))
+font_guide_sec = get_font(int(H * 0.022))
+font_guide_text = get_font(int(H * 0.016))
+font_end_title = get_font(int(H * 0.065))
+font_end_sub = get_font(int(H * 0.025))
+font_stun_banner = get_font(int(H * 0.030))
+font_death_counter = get_font(int(H * 0.021))
+
+
+# ---------------------------------------------------------------------------
+# Asset Loading Helpers
+# ---------------------------------------------------------------------------
 def load_image(name):
     """Load an image from the assets folder preserving alpha channel."""
     path = os.path.join(ASSETS, name)
@@ -38,7 +95,7 @@ def solidify_surface(surf, passes=4):
 
 
 def extract_grid_frames(name, rows, cols, solidify=False):
-    """Extract individual frames from a transparent sprite sheet grid, handling fractional sizes smoothly."""
+    """Extract individual frames from a transparent sprite sheet grid."""
     path = os.path.join(ASSETS, name)
     sheet = pygame.image.load(path).convert_alpha()
     sw, sh = sheet.get_size()
@@ -61,64 +118,41 @@ def extract_grid_frames(name, rows, cols, solidify=False):
 
 
 # ---------------------------------------------------------------------------
-# Fonts
+# Load Arena Background & Environmental Assets
 # ---------------------------------------------------------------------------
-font_title = pygame.font.SysFont(["cinzel", "georgia", "trajan", "arial"], int(H * 0.055), bold=True)
-font_subtitle = pygame.font.SysFont(["cinzel", "georgia", "arial"], int(H * 0.024), bold=False)
-font_end_title = pygame.font.SysFont(["cinzel", "georgia", "trajan", "arial"], int(H * 0.075), bold=True)
-font_end_sub = pygame.font.SysFont(["cinzel", "georgia", "arial"], int(H * 0.026), bold=False)
-font_btn = pygame.font.SysFont(["cinzel", "georgia", "arial"], int(H * 0.028), bold=True)
-font_bar_name = pygame.font.SysFont(["georgia", "cinzel", "arial"], int(H * 0.023), bold=True)
-font_bar_val = pygame.font.SysFont(["consolas", "georgia", "arial"], int(H * 0.016), bold=True)
-font_heal_status = pygame.font.SysFont(["consolas", "georgia", "arial"], int(H * 0.018), bold=True)
-font_guide_head = pygame.font.SysFont(["georgia", "cinzel", "arial"], int(H * 0.030), bold=True)
-font_guide_sec = pygame.font.SysFont(["georgia", "cinzel", "arial"], int(H * 0.022), bold=True)
-font_guide_body = pygame.font.SysFont(["consolas", "georgia", "arial"], int(H * 0.018), bold=False)
+bg_raw = load_image("background.jpg")
+bg = pygame.transform.scale(bg_raw, (W, H))
 
-
-# ---------------------------------------------------------------------------
-# Background
-# ---------------------------------------------------------------------------
-background = pygame.transform.scale(load_image("background.jpg"), (W, H))
-
-# ---------------------------------------------------------------------------
-# Flags (2 frames each – waving animation)
-# ---------------------------------------------------------------------------
-FLAG_SCALE = 0.27
+FLAG_SCALE = 0.35
 flag_h = int(H * FLAG_SCALE)
 
-flag1_frames_raw = [load_image("flag1_a.png"), load_image("flag1_b.png")]
-flag2_frames_raw = [load_image("flag2_a.png"), load_image("flag2_b.png")]
+flag1_a_raw = load_image("flag1_a.png")
+flag1_b_raw = load_image("flag1_b.png")
+f1_scale = flag_h / flag1_a_raw.get_height()
+flag1_w = int(flag1_a_raw.get_width() * f1_scale)
+flag1_a = pygame.transform.smoothscale(flag1_a_raw, (flag1_w, flag_h))
+flag1_b = pygame.transform.smoothscale(flag1_b_raw, (flag1_w, flag_h))
 
+flag2_a_raw = load_image("flag2_a.png")
+flag2_b_raw = load_image("flag2_b.png")
+f2_scale = flag_h / flag2_a_raw.get_height()
+flag2_w = int(flag2_a_raw.get_width() * f2_scale)
+flag2_a = pygame.transform.smoothscale(flag2_a_raw, (flag2_w, flag_h))
+flag2_b = pygame.transform.smoothscale(flag2_b_raw, (flag2_w, flag_h))
 
-def scale_flag(img):
-    ratio = flag_h / img.get_height()
-    w = int(img.get_width() * ratio)
-    return pygame.transform.smoothscale(img, (w, flag_h))
+GROUND_Y = int(H * 0.88)
+FLAG_BOTTOM_Y = GROUND_Y
 
+flag1_x = int(W * 0.08)
+flag1_y = FLAG_BOTTOM_Y - flag_h
 
-flag1_frames = [scale_flag(f) for f in flag1_frames_raw]
-flag2_frames = [scale_flag(f) for f in flag2_frames_raw]
+flag2_x = int(W * 0.90)
+flag2_y = FLAG_BOTTOM_Y - flag_h
 
-# Anchor positions – defined by the BOTTOM of each flag
-flag1_bottom = (int(W * 0.15), int(H * 0.73))   # left flag
-flag2_bottom = (int(W * 0.77), int(H * 0.73))   # right flag
-
-# ---------------------------------------------------------------------------
-# Cloud Layer (scrolling horizontally)
-# ---------------------------------------------------------------------------
-CLOUD_SCALE = 0.35
-cloud_frames_raw = [load_image("clouds_1.png"), load_image("clouds_2.png")]
-
-
-def scale_cloud(img):
-    w = int(W * CLOUD_SCALE)
-    ratio = w / img.get_width()
-    h = int(img.get_height() * ratio)
-    return pygame.transform.smoothscale(img, (w, h))
-
-
-cloud_frames = [scale_cloud(c) for c in cloud_frames_raw]
+# Clouds (animated drifting across sky)
+cloud_img1 = load_image("clouds_1.png")
+cloud_img2 = load_image("clouds_2.png")
+cloud_variants = [cloud_img1, cloud_img2]
 
 clouds = []
 for _ in range(6):
@@ -126,28 +160,14 @@ for _ in range(6):
         "x": random.randint(-W // 4, W),
         "y": random.randint(0, int(H * 0.12)),
         "speed": random.uniform(0.15, 0.45),
-        "frame_offset": random.randint(0, 1),
         "scale": random.uniform(0.7, 1.3),
         "alpha": random.randint(140, 220),
     })
 
-# ---------------------------------------------------------------------------
-# Smoke Particles (rising from upper-right)
-# ---------------------------------------------------------------------------
-SMOKE_SCALE = 0.09
-smoke_frames_raw = [load_image("smoke_1.png"), load_image("smoke_2.png")]
-
-
-def scale_smoke(img, extra=1.0):
-    h = int(H * SMOKE_SCALE * extra)
-    ratio = h / img.get_height()
-    w = int(img.get_width() * ratio)
-    return pygame.transform.smoothscale(img, (w, h))
-
-
-smoke_variants = []
-for s in [0.7, 1.0, 1.3]:
-    smoke_variants.append([scale_smoke(f, s) for f in smoke_frames_raw])
+# Smoke particles rising from battlefield
+smoke_img1 = load_image("smoke_1.png")
+smoke_img2 = load_image("smoke_2.png")
+smoke_variants = [smoke_img1, smoke_img2]
 
 
 def new_smoke():
@@ -159,14 +179,14 @@ def new_smoke():
         "life": random.randint(180, 360),
         "age": 0,
         "variant": random.randint(0, len(smoke_variants) - 1),
-        "frame_offset": random.randint(0, 1),
     }
 
 
-smoke_particles = [new_smoke() for _ in range(10)]
+smoke_particles = [new_smoke() for _ in range(8)]
+
 
 # ---------------------------------------------------------------------------
-# Player Sprites & Animations (Solidified to eliminate any transparency!)
+# Player (Great General Zhao) Sprites & Scaling
 # ---------------------------------------------------------------------------
 PLAYER_SCALE = FLAG_SCALE * 1.10
 player_h = int(H * PLAYER_SCALE)
@@ -217,10 +237,10 @@ pheal_feet_offset = int(165 * ph_scale)
 pheal_center_offset = pheal_w // 2
 player_heal_frames = [pygame.transform.smoothscale(f, (pheal_w, pheal_h)) for f in raw_player_heal]
 
+
 # ---------------------------------------------------------------------------
-# Boss (Titan) Sprites & Animations (120% size of player)
-# Note: Boss source sheets natively face RIGHT.
-# When facing LEFT towards player, flip horizontally!
+# Boss (The Hollow Magistrate) Sprites & Scaling
+# Sized 120% of player. Source sheets natively face RIGHT.
 # ---------------------------------------------------------------------------
 boss_h = int(player_h * 1.20)
 boss_scale = boss_h / 148.0
@@ -241,15 +261,16 @@ bw_feet = int(165 * boss_scale)
 bw_center = bw_w // 2
 boss_walk_frames = [pygame.transform.smoothscale(f, (bw_w, bw_h)) for f in raw_boss_walk]
 
-# 3. Boss Enraged Roar / Activation (Image 3: boss_enrage.png, 5 rows x 6 cols = 30 frames)
-raw_boss_enrage = extract_grid_frames("boss_enrage.png", 5, 6)
-be_w = int(170.67 * boss_scale)
-be_h = int(170.6 * boss_scale)
-be_feet = int(165 * boss_scale)
+# 3. Boss Enraged Roar / Activation (New 150-frame sheet: 15 rows x 10 cols, plays over 5s!)
+raw_boss_enrage = extract_grid_frames("boss_enrage.png", 15, 10)
+be_scale = boss_h / 55.0
+be_w = int(68.2 * be_scale)
+be_h = int(68.266 * be_scale)
+be_feet = int(62 * be_scale)
 be_center = be_w // 2
 boss_enrage_frames = [pygame.transform.smoothscale(f, (be_w, be_h)) for f in raw_boss_enrage]
 
-# 4. Boss Heavy Smash (greatsword slam with screen shake)
+# 4. Boss Heavy Smash (greatsword slam with 2-second screen shake)
 raw_boss_smash = extract_grid_frames("boss_smash.png", 5, 6)
 bs_w = int(170.67 * boss_scale)
 bs_h = int(170.6 * boss_scale)
@@ -257,16 +278,18 @@ bs_feet = int(162 * boss_scale)
 bs_center = bs_w // 2
 boss_smash_frames = [pygame.transform.smoothscale(f, (bs_w, bs_h)) for f in raw_boss_smash]
 
-# 5. Boss Spear Throw (long-range spear throw)
+# 5. Boss Spear Throw (SHRINKING FIXED: scaled by character pixel height 131.0!)
 raw_boss_spear = extract_grid_frames("boss_spear.png", 5, 6)
-bsp_w = int(170.67 * boss_scale)
-bsp_h = int(184.8 * boss_scale)
-bsp_feet = int(164 * boss_scale)
+spear_scale = boss_h / 131.0
+bsp_w = int(170.67 * spear_scale)
+bsp_h = int(184.8 * spear_scale)
+bsp_feet = int(159 * spear_scale)
 bsp_center = bsp_w // 2
 boss_spear_frames = [pygame.transform.smoothscale(f, (bsp_w, bsp_h)) for f in raw_boss_spear]
 
+
 # ---------------------------------------------------------------------------
-# Projectiles (Kunai Item: Image 5)
+# Projectiles
 # ---------------------------------------------------------------------------
 raw_kunai_item = load_image("kunai_projectile.png")
 kw = int(player_h * 0.32)
@@ -274,28 +297,33 @@ kh = int(kw * (188.0 / 948.0))
 kunai_item_right = pygame.transform.smoothscale(raw_kunai_item, (kw, kh))
 kunai_item_left = pygame.transform.flip(kunai_item_right, True, False)
 
-raw_spear_sub = raw_boss_spear[16].subsurface(pygame.Rect(int(raw_boss_spear[16].get_width() * 0.45), int(raw_boss_spear[16].get_height() * 0.25), int(raw_boss_spear[16].get_width() * 0.50), int(raw_boss_spear[16].get_height() * 0.30)))
-sp_w = int(boss_h * 0.45)
+raw_spear_sub = raw_boss_spear[16].subsurface(pygame.Rect(
+    int(raw_boss_spear[16].get_width() * 0.45),
+    int(raw_boss_spear[16].get_height() * 0.25),
+    int(raw_boss_spear[16].get_width() * 0.50),
+    int(raw_boss_spear[16].get_height() * 0.30)
+))
+sp_w = int(boss_h * 0.52)
 sp_h = int(sp_w * (raw_spear_sub.get_height() / raw_spear_sub.get_width()))
 spear_proj_right = pygame.transform.smoothscale(raw_spear_sub, (sp_w, sp_h))
 spear_proj_left = pygame.transform.flip(spear_proj_right, True, False)
 
-projectiles = []
 
 # ---------------------------------------------------------------------------
-# Entities (Player & Boss State)
+# Gameplay Constants & Variables
 # ---------------------------------------------------------------------------
-GROUND_Y = flag1_bottom[1]
-GRAVITY = 0.65
-JUMP_FORCE = -14
-WALK_SPEED = 5
-DODGE_SPEED = 9
-KUNAI_SPEED = 18
+MOVE_SPEED = 7.0
+JUMP_FORCE = -17.5
+GRAVITY = 0.85
+KUNAI_SPEED = 20.0
+
+death_count = 0
 
 player = {
-    "x": int(W * 0.05),
+    "name": "Great General Zhao",
+    "x": int(flag1_x - (frame_w * 0.18)),
     "y": GROUND_Y,
-    "vy": 0,
+    "vy": 0.0,
     "on_ground": True,
     "facing_right": True,
     "state": "idle",             # "idle", "walk", "dodge", "slash", "parry", "kunai", "heal"
@@ -309,46 +337,94 @@ player = {
     "kunai_spawned": False,
     "heal_used": False,          # Can heal only ONCE per game
     "heal_timer": 0,             # 120 ticks = 2.0s channel
+    "kunai_count": 3,            # Rechargeable Kunai pouch (max 3)
+    "kunai_max": 3,
+    "kunai_recharge_timer": 0,   # 240 ticks = 4.0s per recharge
+    "is_blocking": False,        # True when mistimed parry / normal block active
 }
 
 boss = {
-    "name": "Titan",
+    "name": "The Hollow Magistrate",
+    "title": "Titan of the Ashen Peak",
     "x": int(W * 0.82),
     "y": GROUND_Y,
     "facing_right": False,      # initially facing left towards player
-    "state": "idle",            # "idle", "walk", "smash", "spear", "kunai", "enrage_intro"
+    "state": "idle",            # "idle", "walk", "smash", "spear", "kunai", "enrage_intro", "stunned"
     "frame_idx": 0,
     "tick_count": 0,
     "hp": 1000,
     "max_hp": 1000,
     "displayed_hp": 1000.0,
-    "action_timer": random.uniform(1.0, 4.0),       # Random patrol duration (switches directions completely randomly!)
-    "walk_dir": 0,                                  # -1 (left), 0 (still), 1 (right)
-    "attack_cooldown": random.uniform(3.0, 5.0),    # interval 3-5s for boss attacks
+    "posture": 0.0,             # Stagger / Posture meter (0.0 to 100.0)
+    "max_posture": 100.0,
+    "posture_decay_delay": 0,
+    "is_stunned": False,
+    "stun_timer": 0,            # 210 ticks = 3.5s posture break stun window
+    "action_timer": random.uniform(1.0, 4.0),
+    "walk_dir": 0,
+    "attack_cooldown": random.uniform(3.0, 5.0),
     "projectile_spawned": False,
     "smash_hit": False,
-    "enraged_triggered": False,                     # Has enrage 3s intro played
-    "enrage_intro_timer": 0,                        # 180 ticks = 3.0s intro
+    "enraged_triggered": False,
+    "enrage_intro_timer": 0,    # 330 ticks = 5.5s intro!
     "enraged_override": False,
 }
 
-# Ground Shake (120 frames at 60 FPS = 2.0 Seconds)
 ground_shake_timer = 0
 ground_shake_intensity = 0.0
 
+projectiles = []
+sparks = []
+red_mist_particles = []
+
+
+def spawn_sparks(x, y, count=20, is_golden=True):
+    """Spawns dynamic burst of spark particles on parry/clash."""
+    golden_cols = [(255, 235, 140), (255, 195, 70), (255, 255, 220), (255, 130, 40)]
+    silver_cols = [(220, 220, 220), (180, 180, 180), (240, 240, 240)]
+    palette = golden_cols if is_golden else silver_cols
+    for _ in range(count):
+        ang = random.uniform(0, math.pi * 2)
+        spd = random.uniform(4.0, 14.0)
+        col = random.choice(palette)
+        sparks.append({
+            "x": float(x),
+            "y": float(y),
+            "vx": math.cos(ang) * spd,
+            "vy": math.sin(ang) * spd - random.uniform(1.0, 4.0),
+            "color": col,
+            "life": random.randint(14, 28),
+            "max_life": 28,
+            "size": max(1, int(random.uniform(2.0, 4.5))),
+        })
+
+
+def spawn_red_mist(bx, by, count=2):
+    """Spawns ominous dark red mist aura around the Magistrate."""
+    for _ in range(count):
+        red_mist_particles.append({
+            "x": bx + random.uniform(-boss_h * 0.35, boss_h * 0.35),
+            "y": by - random.uniform(0, boss_h * 0.95),
+            "vx": random.uniform(-0.6, 0.6),
+            "vy": random.uniform(-1.2, -0.4),
+            "radius": random.uniform(8.0, 22.0),
+            "alpha": random.randint(60, 130),
+            "life": random.randint(30, 60),
+            "max_life": 60,
+        })
+
 
 def reset_battle():
-    """Resets both player, boss, and combat systems to initial state."""
-    global projectiles, ground_shake_timer, ground_shake_intensity
-    projectiles.clear()
+    global ground_shake_timer, ground_shake_intensity, projectiles, sparks, red_mist_particles
     ground_shake_timer = 0
     ground_shake_intensity = 0.0
+    projectiles = []
+    sparks = []
+    red_mist_particles = []
 
-    player["hp"] = player["max_hp"]
-    player["displayed_hp"] = float(player["max_hp"])
-    player["x"] = int(W * 0.05)
+    player["x"] = int(flag1_x - (frame_w * 0.18))
     player["y"] = GROUND_Y
-    player["vy"] = 0
+    player["vy"] = 0.0
     player["on_ground"] = True
     player["facing_right"] = True
     player["state"] = "idle"
@@ -356,12 +432,20 @@ def reset_battle():
     player["tick_count"] = 0
     player["blink_timer"] = random.randint(120, 180)
     player["is_blinking"] = False
+    player["hp"] = player["max_hp"]
+    player["displayed_hp"] = float(player["max_hp"])
     player["kunai_spawned"] = False
     player["heal_used"] = False
     player["heal_timer"] = 0
+    player["kunai_count"] = player["kunai_max"]
+    player["kunai_recharge_timer"] = 0
+    player["is_blocking"] = False
 
     boss["hp"] = boss["max_hp"]
     boss["displayed_hp"] = float(boss["max_hp"])
+    boss["posture"] = 0.0
+    boss["is_stunned"] = False
+    boss["stun_timer"] = 0
     boss["x"] = int(W * 0.82)
     boss["y"] = GROUND_Y
     boss["facing_right"] = False
@@ -379,204 +463,283 @@ def reset_battle():
 
 
 # ---------------------------------------------------------------------------
-# UI Guide Content (Haven Hackathon)
+# Traditional Feudal UI & Crossed Swords Crest
+# ---------------------------------------------------------------------------
+def draw_feudal_panel(surface, rect, border_col=(130, 32, 28), bg_col=(22, 16, 14, 235), gold_corners=True):
+    """Draws an antique Japanese / Dark Souls style plaque with corner brackets."""
+    panel_surf = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+    panel_surf.fill(bg_col)
+    surface.blit(panel_surf, (rect.x, rect.y))
+
+    # Outer border & inner subtle border
+    pygame.draw.rect(surface, border_col, rect, 2, border_radius=3)
+    inner_rect = rect.inflate(-6, -6)
+    pygame.draw.rect(surface, (border_col[0] // 2, border_col[1] // 2, border_col[2] // 2), inner_rect, 1, border_radius=2)
+
+    # Gold leaf corner brackets (Antique Feudal styling)
+    if gold_corners:
+        gold = (212, 163, 75)
+        c_len = min(14, rect.width // 6, rect.height // 6)
+        # Top-Left
+        pygame.draw.line(surface, gold, (rect.x, rect.y), (rect.x + c_len, rect.y), 3)
+        pygame.draw.line(surface, gold, (rect.x, rect.y), (rect.x, rect.y + c_len), 3)
+        # Top-Right
+        pygame.draw.line(surface, gold, (rect.right - 1, rect.y), (rect.right - 1 - c_len, rect.y), 3)
+        pygame.draw.line(surface, gold, (rect.right - 1, rect.y), (rect.right - 1, rect.y + c_len), 3)
+        # Bottom-Left
+        pygame.draw.line(surface, gold, (rect.x, rect.bottom - 1), (rect.x + c_len, rect.bottom - 1), 3)
+        pygame.draw.line(surface, gold, (rect.x, rect.bottom - 1), (rect.x, rect.bottom - 1 - c_len), 3)
+        # Bottom-Right
+        pygame.draw.line(surface, gold, (rect.right - 1, rect.bottom - 1), (rect.right - 1 - c_len, rect.bottom - 1), 3)
+        pygame.draw.line(surface, gold, (rect.right - 1, rect.bottom - 1), (rect.right - 1, rect.bottom - 1 - c_len), 3)
+
+
+def draw_crossed_swords(surface, cx, cy, radius=int(H * 0.038)):
+    """Draws an authentic intersecting katana crest between health bars."""
+    # Outer crimson seal ring
+    pygame.draw.circle(surface, (18, 12, 11), (cx, cy), radius)
+    pygame.draw.circle(surface, (140, 32, 28), (cx, cy), radius, 2)
+    pygame.draw.circle(surface, (212, 163, 75), (cx, cy), radius - 3, 1)
+
+    # Two crossed swords at 45 degree diagonals
+    blade_len = radius * 1.35
+    for angle in [math.pi * 0.25, math.pi * 0.75]:
+        dx = math.cos(angle)
+        dy = math.sin(angle)
+
+        p_tip = (cx + dx * blade_len, cy - dy * blade_len)
+        p_pommel = (cx - dx * (blade_len * 0.85), cy + dy * (blade_len * 0.85))
+
+        # Silver steel blade with blood groove
+        pygame.draw.line(surface, (230, 235, 240), (cx, cy), p_tip, 3)
+        pygame.draw.line(surface, (160, 170, 180), (cx, cy), p_tip, 1)
+
+        # Crossguard (Tsuba) in antique gold
+        guard_dx = -dy * 7
+        guard_dy = dx * 7
+        g1 = (cx - dx * 6 + guard_dx, cy + dy * 6 + guard_dy)
+        g2 = (cx - dx * 6 - guard_dx, cy + dy * 6 - guard_dy)
+        pygame.draw.line(surface, (220, 180, 85), g1, g2, 4)
+
+        # Hilt (Tsuka) wrapped in dark crimson
+        pygame.draw.line(surface, (145, 28, 24), (cx - dx * 6, cy + dy * 6), p_pommel, 3)
+        # Gold pommel ring
+        pygame.draw.circle(surface, (220, 180, 85), (int(p_pommel[0]), int(p_pommel[1])), 3)
+
+    # Central golden rivet
+    pygame.draw.circle(surface, (240, 210, 110), (cx, cy), 3)
+
+
+def draw_health_bars(surface, p, b, boss_phase, is_enraged):
+    """Draws feudal health bars, posture meter, and central crossed swords emblem."""
+    margin_x = int(W * 0.04)
+    bar_w = int(W * 0.38)
+    bar_h = int(H * 0.030)
+    bar_y = int(H * 0.045)
+
+    # --- 1. PLAYER HEALTH BAR (LEFT) ---
+    p["displayed_hp"] += (p["hp"] - p["displayed_hp"]) * 0.12
+    p_pct = max(0.0, min(1.0, p["hp"] / p["max_hp"]))
+    p_lag_pct = max(0.0, min(1.0, p["displayed_hp"] / p["max_hp"]))
+
+    # Label & Flask / Kunai status
+    p_title = font_bar_name.render(p["name"], True, (240, 230, 210))
+    surface.blit(p_title, (margin_x, bar_y - int(H * 0.034)))
+
+    p_bg_rect = pygame.Rect(margin_x, bar_y, bar_w, bar_h)
+    draw_feudal_panel(surface, p_bg_rect, border_col=(120, 30, 25), bg_col=(18, 12, 10, 230))
+
+    if p_lag_pct > 0:
+        lag_rect = pygame.Rect(margin_x + 3, bar_y + 3, int((bar_w - 6) * p_lag_pct), bar_h - 6)
+        pygame.draw.rect(surface, (210, 160, 60), lag_rect)
+
+    if p_pct > 0:
+        fill_w = int((bar_w - 6) * p_pct)
+        fill_rect = pygame.Rect(margin_x + 3, bar_y + 3, fill_w, bar_h - 6)
+        pygame.draw.rect(surface, (190, 32, 28), fill_rect)
+
+    p_hp_str = f"{p['hp']} / {p['max_hp']} HP"
+    p_hp_surf = font_bar_val.render(p_hp_str, True, (255, 245, 235))
+    surface.blit(p_hp_surf, (margin_x + 10, bar_y + (bar_h - p_hp_surf.get_height()) // 2))
+
+    # Player Sub-Bar: Flask and Rechargeable Kunai
+    sub_y = bar_y + bar_h + 8
+    # Flask Status
+    if p["heal_used"]:
+        flask_str = "[E] FLASK: EMPTY"
+        flask_col = (110, 100, 95)
+    elif is_enraged:
+        flask_str = "[E] FLASK: LOCKED (ENRAGED!)"
+        flask_col = (235, 60, 60)
+    elif p["state"] == "heal":
+        flask_str = f"[E] HEALING... ({p['heal_timer'] // 60 + 1}s)"
+        flask_col = (90, 245, 130)
+    else:
+        flask_str = "[E] FLASK: READY (+50% HP)"
+        flask_col = (95, 225, 120)
+
+    f_surf = font_hud_info.render(flask_str, True, flask_col)
+    surface.blit(f_surf, (margin_x, sub_y))
+
+    # Rechargeable Kunai Display
+    kunai_str = f"KUNAI [Q]: {'◆ ' * p['kunai_count']}{'◇ ' * (p['kunai_max'] - p['kunai_count'])}"
+    k_col = (220, 200, 140) if p["kunai_count"] > 0 else (130, 120, 110)
+    k_surf = font_hud_info.render(kunai_str, True, k_col)
+    surface.blit(k_surf, (margin_x + int(bar_w * 0.55), sub_y))
+
+    # --- 2. CROSSED SWORDS CREST (CENTER) ---
+    center_x = W // 2
+    center_y = bar_y + bar_h // 2
+    draw_crossed_swords(surface, center_x, center_y, radius=int(bar_h * 0.95))
+
+    # Death Counter below center emblem
+    death_str = f"DEATHS: {death_count}"
+    d_surf = font_death_counter.render(death_str, True, (215, 70, 60))
+    surface.blit(d_surf, d_surf.get_rect(center=(center_x, sub_y + 10)))
+
+    # --- 3. BOSS HEALTH & POSTURE BAR (RIGHT) ---
+    b_x = W - margin_x - bar_w
+    b["displayed_hp"] += (b["hp"] - b["displayed_hp"]) * 0.12
+    b_pct = max(0.0, min(1.0, b["hp"] / b["max_hp"]))
+    b_lag_pct = max(0.0, min(1.0, b["displayed_hp"] / b["max_hp"]))
+
+    # Boss Name, Title, and Phase Tag
+    p_tag = " [PHASE III: ENRAGED]" if boss_phase == 3 else (" [PHASE II: RED MIST]" if boss_phase == 2 else " [PHASE I]")
+    p_tag_col = (255, 60, 60) if boss_phase == 3 else ((255, 150, 70) if boss_phase == 2 else (210, 195, 160))
+    b_name_surf = font_bar_name.render(b["name"], True, (245, 225, 205))
+    b_tag_surf = font_hud_info.render(p_tag, True, p_tag_col)
+
+    surface.blit(b_name_surf, (b_x + bar_w - b_name_surf.get_width() - b_tag_surf.get_width() - 8, bar_y - int(H * 0.034)))
+    surface.blit(b_tag_surf, (b_x + bar_w - b_tag_surf.get_width(), bar_y - int(H * 0.031)))
+
+    b_bg_rect = pygame.Rect(b_x, bar_y, bar_w, bar_h)
+    draw_feudal_panel(surface, b_bg_rect, border_col=(140, 32, 28) if is_enraged else (100, 30, 25), bg_col=(18, 10, 10, 230))
+
+    if b_lag_pct > 0:
+        lag_rect = pygame.Rect(b_x + 3, bar_y + 3, int((bar_w - 6) * b_lag_pct), bar_h - 6)
+        pygame.draw.rect(surface, (215, 160, 60), lag_rect)
+
+    if b_pct > 0:
+        fill_w = int((bar_w - 6) * b_pct)
+        fill_rect = pygame.Rect(b_x + 3, bar_y + 3, fill_w, bar_h - 6)
+        boss_fill_col = (220, 25, 25) if is_enraged else (165, 30, 26)
+        pygame.draw.rect(surface, boss_fill_col, fill_rect)
+
+    b_hp_str = f"{b['hp']} / {b['max_hp']} HP"
+    b_hp_surf = font_bar_val.render(b_hp_str, True, (255, 245, 235))
+    surface.blit(b_hp_surf, (b_x + bar_w - b_hp_surf.get_width() - 10, bar_y + (bar_h - b_hp_surf.get_height()) // 2))
+
+    # --- 4. BOSS POSTURE / STAGGER METER ---
+    posture_h = int(H * 0.010)
+    posture_y = sub_y + 2
+    posture_rect = pygame.Rect(b_x, posture_y, bar_w, posture_h)
+    pygame.draw.rect(surface, (14, 10, 10), posture_rect)
+    pygame.draw.rect(surface, (90, 70, 45), posture_rect, 1)
+
+    posture_pct = max(0.0, min(1.0, b["posture"] / b["max_posture"]))
+    if posture_pct > 0:
+        p_fill_w = int((bar_w - 2) * posture_pct)
+        p_col = (255, 80, 50) if posture_pct >= 0.85 else (235, 175, 45)
+        pygame.draw.rect(surface, p_col, pygame.Rect(b_x + 1, posture_y + 1, p_fill_w, posture_h - 2))
+
+    # Posture Label
+    p_label = "POSTURE: BROKEN!" if b["is_stunned"] else f"POSTURE ({int(b['posture'])}%)"
+    p_label_col = (255, 75, 75) if b["is_stunned"] else (190, 170, 140)
+    p_lbl_surf = font_hud_info.render(p_label, True, p_label_col)
+    surface.blit(p_lbl_surf, (b_x, posture_y + posture_h + 3))
+
+
+# ---------------------------------------------------------------------------
+# Guide Content Data
 # ---------------------------------------------------------------------------
 GUIDE_SECTIONS = [
     {
-        "title": "HAVEN HACKATHON - COMBAT SPECIFICATION",
-        "color": (255, 215, 120),
+        "title": "COMBAT CONTROLS",
+        "color": (235, 185, 90),
         "lines": [
-            "Welcome to the Haven Hackathon combat demo.",
-            "Take command of Great General Zhao against the ancient Titan.",
-        ]
-    },
-    {
-        "title": "CONTROLS & KEYBINDS",
-        "color": (120, 210, 255),
-        "lines": [
-            "  [ W ]          : Jump (Vertical leap with gravity)",
-            "  [ A ]          : Move Left (Facing directional turn)",
-            "  [ D ]          : Move Right",
-            "  [ Left Shift ] : Dodge (Forward evasive roll, invulnerable to projectiles & shockwaves)",
-            "  [ Right Shift ]: Sword Slash (High-impact close-range combo)",
-            "  [ Q ]          : Throw Kunai (Launches projectile in facing direction)",
-            "  [ F ]          : Parry (Defensive counter-stance; blocks attacks/projectiles)",
-            "  [ E ]          : Healing Flask (Heals 50% HP, takes 2s, 1 use per game; LOCKED when Boss is enraged!)",
-            "  [ Spacebar ]   : Pause Menu (Time Rewind 10s, Reset, Keybinds)",
-            "  [ U ]          : Toggle Enraged Mode (Test 3s intro roar, red glowing outline & 70% faster attacks)",
-            "  [ S ]          : Trigger Boss Sword Slam (Test 2-second screen shake)",
-            "  [ K ]          : Self-Damage Test (-25 HP to test Defeat screen)",
-            "  [ T ]          : Strike Titan Test (-200 HP to test Victory screen)",
+            "  [ A ] / [ D ]  : Movement (Left / Right across the arena)",
+            "  [ W ]          : Jump (Leap over ground smash shockwaves)",
+            "  [ Left Shift ] : Dodge / Roll (Full invulnerability frames through attacks)",
+            "  [ Right Shift ]: Sword Slash (Close-range combo, deals posture damage)",
+            "  [ Q ]          : Throw Kunai (Pouch holds 3, charges automatically recharge!)",
+            "  [ F ]          : Parry (Perfect timing deflects attacks & deals heavy posture damage!)",
+            "                   Mistimed parry acts as a NORMAL BLOCK (mitigates 60% damage).",
+            "  [ E ]          : Healing Flask (Heals 50% HP over 2s, 1 use per battle; LOCKED during Enraged Mode!)",
+            "  [ Spacebar ]   : Combat Guide / Pause",
             "  [ Esc ]        : Return to Menu / Exit Game",
         ]
     },
     {
-        "title": "COMBAT RULES & MECHANICS",
-        "color": (255, 140, 140),
+        "title": "SOULSLIKE BOSS PHASES: THE HOLLOW MAGISTRATE",
+        "color": (235, 110, 95),
         "lines": [
-            "  • Healing Flask     : Press E to channel healing for 2 seconds to restore 50% HP. Can only be used ONCE per game.",
-            "                        CANNOT be used when Titan is Enraged!",
-            "  • Parry Risk/Reward : Precise parry reflects attacks safely.",
-            "                        MISSING parry timing inflicts HIGHER damage penalty than not parrying!",
-            "  • 2-Second Quake    : When Titan's sword impacts the ground, a violent ground shake lasts for 2 full seconds!",
-            "  • Enrage Activation : At <= 10% HP, Titan stops to roar with crimson dark rage for 3 seconds,",
-            "                        then gains a glowing red outline with 70% faster attacks!",
+            "  • Phase I  (100% - 66% HP): Tactical pacing. Spear throws at range, heavy greatsword slams close.",
+            "  • Phase II (66% - 33% HP) : The Red Mist aura awakens! Magistrate attacks faster and deals +25% damage.",
+            "  • Phase III (<= 33% HP / Enraged <= 10%): 5.5-second dark roar transition! Crimson aura surges,",
+            "                              attacks are 70% faster, and player healing is locked!",
         ]
     },
     {
-        "title": "BOSS: TITAN AI & BEHAVIOR",
-        "color": (255, 180, 80),
+        "title": "PARRY, POSTURE & CRITICAL STRIKES",
+        "color": (235, 215, 120),
         "lines": [
-            "  • Random Patrol     : Titan walks and switches directions completely randomly across the arena.",
-            "  • Red Aura Idle     : Titan's signature stance animation plays with clean transparency.",
-            "  • Distance Check    : If far from player (> 1/4 screen width), Titan EXCLUSIVELY throws his Spear.",
-            "                        If close to player (<= 1/4 screen width), Titan randomly slams with Greatsword or throws Kunai.",
+            "  • Perfect Parry  : Deflect at the exact split-second of impact to trigger golden sparks, metallic",
+            "                     clashing sound, slight camera shake, and deal +25 POSTURE DAMAGE!",
+            "  • Posture Broken : Filling the Magistrate's Posture meter stuns him for 3.5 seconds!",
+            "  • Critical Strike: Striking the Magistrate during his stunned window deals a massive CRITICAL (+250 DMG)!",
+            "  • Normal Block   : Holding or mistiming parry still blocks 60% of incoming damage with a heavy thud.",
+        ]
+    },
+    {
+        "title": "TEST HOTKEYS (DEVELOPER TESTING)",
+        "color": (160, 200, 240),
+        "lines": [
+            "  [ S ] : Test Force Boss Ground Smash (Triggers 2-second screen shake)",
+            "  [ U ] : Test Toggle Enraged Mode (5.5-second roar sequence + 70% attack speed)",
+            "  [ T ] : Strike Magistrate Test (-200 HP, tests posture & phases)",
+            "  [ K ] : Self-Damage Test (-25 HP, tests Defeat screen & death counter)",
         ]
     }
 ]
 
-# ---------------------------------------------------------------------------
-# UI Helpers & Drawing
-# ---------------------------------------------------------------------------
-def draw_button(surface, rect, text, is_hover, primary_col=(180, 35, 35), border_col=(220, 185, 110)):
-    """Draws a stylized button with borders and hover highlights."""
-    btn_col = (min(primary_col[0] + 40, 255), min(primary_col[1] + 40, 255), min(primary_col[2] + 40, 255)) if is_hover else primary_col
-    border_c = (255, 235, 160) if is_hover else border_col
 
-    pygame.draw.rect(surface, btn_col, rect, border_radius=6)
+def draw_button(surface, rect, text, is_hover, primary_col=(130, 32, 28), border_col=(212, 163, 75)):
+    """Draws a feudal plaque button with gold corners and calligraphy styling."""
+    bg = (min(primary_col[0] + 35, 255), min(primary_col[1] + 25, 255), min(primary_col[2] + 20, 255)) if is_hover else primary_col
+    draw_feudal_panel(surface, rect, border_col=border_col, bg_col=bg, gold_corners=True)
 
-    top_rect = pygame.Rect(rect.x, rect.y, rect.width, rect.height // 2)
-    glass = pygame.Surface((top_rect.width, top_rect.height), pygame.SRCALPHA)
-    glass.fill((255, 255, 255, 30 if not is_hover else 50))
-    surface.blit(glass, top_rect)
-
-    pygame.draw.rect(surface, border_c, rect, width=2, border_radius=6)
-
-    txt_surf = font_btn.render(text, True, (255, 255, 255) if not is_hover else (255, 240, 190))
-    txt_rect = txt_surf.get_rect(center=rect.center)
-    surface.blit(txt_surf, txt_rect)
-
-
-def draw_health_bars(surface, p, b, is_enraged):
-    """Draws the player's red health bar on the left, boss's bar on the right, and healing flask status."""
-    p["displayed_hp"] += (p["hp"] - p["displayed_hp"]) * 0.1
-    b["displayed_hp"] += (b["hp"] - b["displayed_hp"]) * 0.1
-
-    bar_w = int(W * 0.36)
-    bar_h = 24
-    top_y = int(H * 0.055)
-
-    # ── Player Health Bar (Left) ──────────────────────────────────────────
-    px = int(W * 0.04)
-    p_name = font_bar_name.render("Great General Zhao", True, (240, 220, 170))
-    p_name_shadow = font_bar_name.render("Great General Zhao", True, (20, 15, 10))
-    surface.blit(p_name_shadow, (px + 2, top_y - 28))
-    surface.blit(p_name, (px, top_y - 30))
-
-    p_bg_rect = pygame.Rect(px, top_y, bar_w, bar_h)
-    pygame.draw.rect(surface, (25, 20, 20), p_bg_rect, border_radius=4)
-
-    p_pct_lag = max(0.0, min(1.0, p["displayed_hp"] / p["max_hp"]))
-    if p_pct_lag > 0:
-        p_lag_rect = pygame.Rect(px, top_y, int(bar_w * p_pct_lag), bar_h)
-        pygame.draw.rect(surface, (220, 160, 50), p_lag_rect, border_radius=4)
-
-    p_pct = max(0.0, min(1.0, p["hp"] / p["max_hp"]))
-    if p_pct > 0:
-        p_fill_rect = pygame.Rect(px, top_y, int(bar_w * p_pct), bar_h)
-        pygame.draw.rect(surface, (215, 30, 30), p_fill_rect, border_radius=4)
-        highlight_rect = pygame.Rect(px, top_y, int(bar_w * p_pct), bar_h // 2)
-        hl = pygame.Surface((highlight_rect.width, highlight_rect.height), pygame.SRCALPHA)
-        hl.fill((255, 255, 255, 45))
-        surface.blit(hl, highlight_rect)
-
-    pygame.draw.rect(surface, (200, 170, 90), p_bg_rect, width=2, border_radius=4)
-
-    p_val_surf = font_bar_val.render(f"{int(p['hp'])} / {p['max_hp']} HP", True, (255, 245, 225))
-    surface.blit(p_val_surf, (px + 8, top_y + 4))
-
-    # Healing Flask Status Display Below Bar
-    if p["heal_used"]:
-        h_txt = "[E] Healing Flask: USED (1/1)"
-        h_col = (130, 130, 130)
-    elif is_enraged:
-        h_txt = "[E] Healing Flask: LOCKED (Boss Enraged!)"
-        h_col = (255, 75, 75)
-    elif p["state"] == "heal":
-        h_txt = f"[E] Channeling Heal... ({p['heal_timer'] // 60 + 1}s)"
-        h_col = (100, 255, 140)
-    else:
-        h_txt = "[E] Healing Flask: READY (+50% HP)"
-        h_col = (110, 245, 120)
-
-    h_surf = font_heal_status.render(h_txt, True, h_col)
-    surface.blit(h_surf, (px, top_y + bar_h + 8))
-
-    # ── Boss Health Bar (Right) ───────────────────────────────────────────
-    bx = W - int(W * 0.04) - bar_w
-    b_title = "Titan [ENRAGED]" if is_enraged else "Titan"
-    b_name = font_bar_name.render(b_title, True, (255, 60, 60) if is_enraged else (240, 220, 170))
-    b_name_shadow = font_bar_name.render(b_title, True, (20, 15, 10))
-    b_name_rect = b_name.get_rect(topright=(bx + bar_w, top_y - 30))
-    surface.blit(b_name_shadow, (b_name_rect.x + 2, b_name_rect.y + 2))
-    surface.blit(b_name, b_name_rect)
-
-    b_bg_rect = pygame.Rect(bx, top_y, bar_w, bar_h)
-    pygame.draw.rect(surface, (25, 20, 20), b_bg_rect, border_radius=4)
-
-    b_pct_lag = max(0.0, min(1.0, b["displayed_hp"] / b["max_hp"]))
-    if b_pct_lag > 0:
-        b_lag_rect = pygame.Rect(bx, top_y, int(bar_w * b_pct_lag), bar_h)
-        pygame.draw.rect(surface, (220, 160, 50), b_lag_rect, border_radius=4)
-
-    b_pct = max(0.0, min(1.0, b["hp"] / b["max_hp"]))
-    if b_pct > 0:
-        b_color = (245, 30, 30) if is_enraged else (180, 35, 55)
-        b_fill_rect = pygame.Rect(bx, top_y, int(bar_w * b_pct), bar_h)
-        pygame.draw.rect(surface, b_color, b_fill_rect, border_radius=4)
-        highlight_rect = pygame.Rect(bx, top_y, int(bar_w * b_pct), bar_h // 2)
-        hl = pygame.Surface((highlight_rect.width, highlight_rect.height), pygame.SRCALPHA)
-        hl.fill((255, 255, 255, 45))
-        surface.blit(hl, highlight_rect)
-
-    border_color = (255, 40, 40) if is_enraged else (215, 140, 70)
-    pygame.draw.rect(surface, border_color, b_bg_rect, width=2, border_radius=4)
-
-    b_val_surf = font_bar_val.render(f"{int(b['hp'])} / {b['max_hp']} HP", True, (255, 245, 225))
-    b_val_rect = b_val_surf.get_rect(topright=(bx + bar_w - 8, top_y + 4))
-    surface.blit(b_val_surf, b_val_rect)
+    txt_surf = font_btn.render(text, True, (255, 245, 220) if is_hover else (235, 220, 195))
+    surface.blit(txt_surf, txt_surf.get_rect(center=rect.center))
 
 
 # ---------------------------------------------------------------------------
-# Game States & Button Rectangles
+# Main Game Loop State
 # ---------------------------------------------------------------------------
-game_state = "MENU"
-controls_scroll_y = 0
-max_scroll_y = 0
+game_state = "MENU"   # "MENU", "CONTROLS", "PLAYING", "VICTORY", "DEFEAT"
+scroll_y = 0
+frame_count = 0
+running = True
 
 btn_w = int(W * 0.28)
 btn_h = int(H * 0.065)
-btn_start_rect = pygame.Rect((W - btn_w) // 2, int(H * 0.50), btn_w, btn_h)
-btn_ctrls_rect = pygame.Rect((W - btn_w) // 2, int(H * 0.60), btn_w, btn_h)
-btn_exit_rect = pygame.Rect((W - btn_w) // 2, int(H * 0.70), btn_w, btn_h)
+btn_x = (W - btn_w) // 2
+btn_start_rect = pygame.Rect(btn_x, int(H * 0.52), btn_w, btn_h)
+btn_guide_rect = pygame.Rect(btn_x, int(H * 0.62), btn_w, btn_h)
+btn_exit_rect = pygame.Rect(btn_x, int(H * 0.72), btn_w, btn_h)
 
-btn_back_rect = pygame.Rect(int(W * 0.08), int(H * 0.88), int(W * 0.16), int(H * 0.055))
-btn_reset_rect = pygame.Rect((W - btn_w) // 2, int(H * 0.52), btn_w, btn_h)
-btn_menu_rect = pygame.Rect((W - btn_w) // 2, int(H * 0.62), btn_w, btn_h)
+btn_back_rect = pygame.Rect(int(W * 0.05), int(H * 0.90), int(W * 0.16), int(H * 0.055))
+btn_reset_rect = pygame.Rect((W - int(W * 0.24)) // 2, int(H * 0.52), int(W * 0.24), int(H * 0.065))
+btn_menu_rect = pygame.Rect((W - int(W * 0.24)) // 2, int(H * 0.62), int(W * 0.24), int(H * 0.065))
+
 
 # ---------------------------------------------------------------------------
-# Main Game Loop
+# MAIN LOOP
 # ---------------------------------------------------------------------------
-frame_count = 0
-FLAG_ANIM_SPEED = 12
-CLOUD_ANIM_SPEED = 30
-SMOKE_ANIM_SPEED = 18
-
-running = True
 while running:
-    mouse_pos = pygame.mouse.get_pos()
     frame_count += 1
     events = pygame.event.get()
+    mouse_pos = pygame.mouse.get_pos()
+    mouse_clicked = False
 
     for event in events:
         if event.type == pygame.QUIT:
@@ -589,308 +752,315 @@ while running:
                 elif game_state == "MENU":
                     running = False
 
-            if game_state == "MENU":
-                if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
-                    reset_battle()
-                    game_state = "PLAYING"
-                elif event.key == pygame.K_c:
+            if event.key == pygame.K_SPACE:
+                if game_state == "PLAYING":
                     game_state = "CONTROLS"
-
-            elif game_state == "CONTROLS":
-                if event.key in (pygame.K_BACKSPACE, pygame.K_RETURN):
-                    game_state = "MENU"
-
-            elif game_state in ("VICTORY", "DEFEAT"):
-                if event.key in (pygame.K_r, pygame.K_RETURN, pygame.K_SPACE):
-                    reset_battle()
+                elif game_state == "CONTROLS":
                     game_state = "PLAYING"
-                elif event.key == pygame.K_m:
-                    reset_battle()
-                    game_state = "MENU"
 
-            elif game_state == "PLAYING":
-                if event.key == pygame.K_k:
-                    player["hp"] = max(0, player["hp"] - 25)
-                elif event.key == pygame.K_t:
-                    boss["hp"] = max(0, boss["hp"] - 200)
-                elif event.key == pygame.K_u:
-                    # Toggle Enraged mode test
-                    boss["enraged_override"] = not boss["enraged_override"]
-                elif event.key == pygame.K_s:
-                    # Trigger boss sword slam test
+            if event.key in (pygame.K_r, pygame.K_RETURN) and game_state in ("VICTORY", "DEFEAT"):
+                reset_battle()
+                game_state = "PLAYING"
+
+            # Developer Combat Testing Keys
+            if game_state == "PLAYING":
+                if event.key == pygame.K_s:
                     boss["state"] = "smash"
                     boss["frame_idx"] = 0
                     boss["tick_count"] = 0
                     boss["smash_hit"] = False
+                elif event.key == pygame.K_u:
+                    boss["enraged_override"] = not boss["enraged_override"]
+                elif event.key == pygame.K_t:
+                    boss["hp"] = max(0, boss["hp"] - 200)
+                    boss["posture"] = min(100.0, boss["posture"] + 25.0)
+                    play_sfx("slash_hit", 0.9)
+                elif event.key == pygame.K_k:
+                    player["hp"] = max(0, player["hp"] - 25)
 
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            if game_state == "MENU":
-                if btn_start_rect.collidepoint(event.pos):
-                    reset_battle()
-                    game_state = "PLAYING"
-                elif btn_ctrls_rect.collidepoint(event.pos):
-                    game_state = "CONTROLS"
-                    controls_scroll_y = 0
-                elif btn_exit_rect.collidepoint(event.pos):
-                    running = False
-
-            elif game_state == "CONTROLS":
-                if btn_back_rect.collidepoint(event.pos):
-                    game_state = "MENU"
-
-            elif game_state in ("VICTORY", "DEFEAT"):
-                if btn_reset_rect.collidepoint(event.pos):
-                    reset_battle()
-                    game_state = "PLAYING"
-                elif btn_menu_rect.collidepoint(event.pos):
-                    reset_battle()
-                    game_state = "MENU"
+            mouse_clicked = True
 
         if event.type == pygame.MOUSEWHEEL and game_state == "CONTROLS":
-            controls_scroll_y = max(0, min(max_scroll_y, controls_scroll_y - event.y * 30))
+            scroll_y = max(-350, min(0, scroll_y + event.y * 30))
 
-    # ══════════════════════════════════════════════════════════════════════
-    # SCREEN SHAKE CALCULATION (Exact 2.0 Seconds = 120 Frames)
-    # ══════════════════════════════════════════════════════════════════════
-    if ground_shake_timer > 0:
-        ground_shake_timer -= 1
-        progress = ground_shake_timer / 120.0
-        cur_intensity = ground_shake_intensity * (progress ** 0.70)
-        shake_x = int(random.uniform(-cur_intensity, cur_intensity))
-        shake_y = int(random.uniform(-cur_intensity * 0.75, cur_intensity * 0.75))
-    else:
-        shake_x = 0
-        shake_y = 0
-
-    # ══════════════════════════════════════════════════════════════════════
-    # BACKGROUND SIMULATION (Active across all screens)
-    # ══════════════════════════════════════════════════════════════════════
-    screen.blit(background, (shake_x, shake_y))
-
-    # Clouds
-    cloud_frame_idx = (frame_count // CLOUD_ANIM_SPEED) % 2
-    for c in clouds:
-        c["x"] += c["speed"]
-        idx = (cloud_frame_idx + c["frame_offset"]) % 2
-        img = cloud_frames[idx]
-        if c["scale"] != 1.0:
-            cw = int(img.get_width() * c["scale"])
-            ch = int(img.get_height() * c["scale"])
-            img = pygame.transform.smoothscale(img, (cw, ch))
-        img = img.copy()
-        img.set_alpha(c["alpha"])
-        screen.blit(img, (int(c["x"]) + shake_x, c["y"] + shake_y))
-        if c["x"] > W + 50:
-            c["x"] = -img.get_width() - random.randint(0, W // 4)
-            c["y"] = random.randint(0, int(H * 0.12))
-
-    # Flags
-    flag_frame_idx = (frame_count // FLAG_ANIM_SPEED) % 2
-    sway = math.sin(frame_count * 0.04) * 3
-
-    f1 = flag1_frames[flag_frame_idx]
-    f1_y = flag1_bottom[1] - f1.get_height()
-    screen.blit(f1, (flag1_bottom[0] + int(sway) + shake_x, f1_y + shake_y))
-
-    f2 = flag2_frames[flag_frame_idx]
-    f2_y = flag2_bottom[1] - f2.get_height()
-    screen.blit(f2, (flag2_bottom[0] - int(sway) + shake_x, f2_y + shake_y))
-
-    # Smoke Particles
-    smoke_frame_idx = (frame_count // SMOKE_ANIM_SPEED) % 2
-    for s in smoke_particles:
-        s["x"] += s["vx"]
-        s["y"] += s["vy"]
-        s["age"] += 1
-        life_ratio = 1.0 - (s["age"] / s["life"])
-        alpha = max(0, int(200 * life_ratio))
-
-        idx = (smoke_frame_idx + s["frame_offset"]) % 2
-        img = smoke_variants[s["variant"]][idx].copy()
-        img.set_alpha(alpha)
-        screen.blit(img, (int(s["x"]) + shake_x, int(s["y"]) + shake_y))
-
-        if s["age"] >= s["life"]:
-            s.update(new_smoke())
-
-    # ══════════════════════════════════════════════════════════════════════
-    # SCREEN STATE ROUTING
-    # ══════════════════════════════════════════════════════════════════════
-
+    # -----------------------------------------------------------------------
+    # 1. State: MENU
+    # -----------------------------------------------------------------------
     if game_state == "MENU":
-        overlay = pygame.Surface((W, H), pygame.SRCALPHA)
-        overlay.fill((10, 8, 8, 140))
-        screen.blit(overlay, (0, 0))
+        screen.blit(bg, (0, 0))
 
-        title_surf = font_title.render("HAVEN HACKATHON", True, (255, 225, 150))
-        title_shadow = font_title.render("HAVEN HACKATHON", True, (15, 10, 5))
-        t_rect = title_surf.get_rect(center=(W // 2, int(H * 0.26)))
-        screen.blit(title_shadow, (t_rect.x + 3, t_rect.y + 3))
-        screen.blit(title_surf, t_rect)
+        # Atmospheric dark overlay
+        dim = pygame.Surface((W, H), pygame.SRCALPHA)
+        dim.fill((14, 10, 8, 175))
+        screen.blit(dim, (0, 0))
 
-        subtitle_surf = font_subtitle.render("GREAT GENERAL ZHAO  vs  TITAN", True, (230, 200, 170))
-        st_rect = subtitle_surf.get_rect(center=(W // 2, int(H * 0.34)))
-        screen.blit(subtitle_surf, st_rect)
+        # Title Emblem
+        t_surf = font_title.render("SHINOBI : LEGEND OF ZHAO", True, (245, 225, 185))
+        t_shadow = font_title.render("SHINOBI : LEGEND OF ZHAO", True, (20, 8, 8))
+        t_rect = t_surf.get_rect(center=(W // 2, int(H * 0.24)))
+        screen.blit(t_shadow, (t_rect.x + 3, t_rect.y + 3))
+        screen.blit(t_surf, t_rect)
 
-        divider_w = int(W * 0.40)
-        pygame.draw.line(screen, (215, 180, 100), (W // 2 - divider_w // 2, int(H * 0.40)), (W // 2 + divider_w // 2, int(H * 0.40)), 2)
+        sub_surf = font_sub.render("Feudal Combat  •  The Hollow Magistrate Boss Encounter", True, (212, 163, 75))
+        screen.blit(sub_surf, sub_surf.get_rect(center=(W // 2, int(H * 0.32))))
 
-        draw_button(screen, btn_start_rect, "START GAME", btn_start_rect.collidepoint(mouse_pos), primary_col=(170, 35, 35))
-        draw_button(screen, btn_ctrls_rect, "CONTROLS & GUIDE", btn_ctrls_rect.collidepoint(mouse_pos), primary_col=(40, 60, 95))
-        draw_button(screen, btn_exit_rect, "EXIT GAME", btn_exit_rect.collidepoint(mouse_pos), primary_col=(50, 45, 50))
+        # Central Crest
+        draw_crossed_swords(screen, W // 2, int(H * 0.41), radius=int(H * 0.045))
 
+        # Feudal Plaque Buttons
+        draw_button(screen, btn_start_rect, "ENTER BATTLEFIELD", btn_start_rect.collidepoint(mouse_pos), primary_col=(140, 32, 28))
+        draw_button(screen, btn_guide_rect, "COMBAT GUIDE & CONTROLS", btn_guide_rect.collidepoint(mouse_pos), primary_col=(35, 30, 28))
+        draw_button(screen, btn_exit_rect, "EXIT TO DESKTOP", btn_exit_rect.collidepoint(mouse_pos), primary_col=(35, 30, 28))
+
+        if mouse_clicked:
+            if btn_start_rect.collidepoint(mouse_pos):
+                reset_battle()
+                game_state = "PLAYING"
+            elif btn_guide_rect.collidepoint(mouse_pos):
+                game_state = "CONTROLS"
+                scroll_y = 0
+            elif btn_exit_rect.collidepoint(mouse_pos):
+                running = False
+
+    # -----------------------------------------------------------------------
+    # 2. State: CONTROLS
+    # -----------------------------------------------------------------------
     elif game_state == "CONTROLS":
-        overlay = pygame.Surface((W, H), pygame.SRCALPHA)
-        overlay.fill((5, 5, 8, 195))
-        screen.blit(overlay, (0, 0))
+        screen.blit(bg, (0, 0))
+        dim = pygame.Surface((W, H), pygame.SRCALPHA)
+        dim.fill((16, 12, 10, 225))
+        screen.blit(dim, (0, 0))
 
-        panel_w = int(W * 0.84)
-        panel_h = int(H * 0.84)
-        panel_x = (W - panel_w) // 2
-        panel_y = int(H * 0.05)
+        content_box = pygame.Rect(int(W * 0.08), int(H * 0.06), int(W * 0.84), int(H * 0.80))
+        draw_feudal_panel(screen, content_box, border_col=(140, 32, 28), bg_col=(20, 14, 12, 240))
 
-        panel_surf = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
-        panel_surf.fill((16, 18, 22, 230))
-        pygame.draw.rect(panel_surf, (215, 185, 110), pygame.Rect(0, 0, panel_w, panel_h), width=2, border_radius=8)
+        g_title = font_guide_head.render("HAVEN HACKATHON — SHINOBI COMBAT MANUAL", True, (245, 225, 185))
+        screen.blit(g_title, g_title.get_rect(center=(W // 2, int(H * 0.12))))
+        pygame.draw.line(screen, (212, 163, 75), (int(W * 0.15), int(H * 0.16)), (int(W * 0.85), int(H * 0.16)), 2)
 
-        header_h = int(H * 0.08)
-        header_surf = pygame.Surface((panel_w - 4, header_h), pygame.SRCALPHA)
-        header_surf.fill((30, 34, 42, 255))
-        panel_surf.blit(header_surf, (2, 2))
+        clip_area = pygame.Rect(int(W * 0.10), int(H * 0.18), int(W * 0.80), int(H * 0.65))
+        screen.set_clip(clip_area)
 
-        head_txt = font_guide_head.render("HAVEN HACKATHON — SYSTEM & COMBAT GUIDE", True, (255, 220, 140))
-        panel_surf.blit(head_txt, (30, (header_h - head_txt.get_height()) // 2))
-
-        content_w = panel_w - 60
-        content_h = int(H * 1.35)
-        max_scroll_y = max(0, content_h - (panel_h - header_h - 20))
-
-        content_surf = pygame.Surface((content_w, content_h), pygame.SRCALPHA)
-        curr_y = 15
-
+        curr_y = int(H * 0.19) + scroll_y
         for sec in GUIDE_SECTIONS:
-            sec_title = font_guide_sec.render(sec["title"], True, sec["color"])
-            content_surf.blit(sec_title, (0, curr_y))
-            curr_y += sec_title.get_height() + 8
+            sec_surf = font_guide_sec.render(sec["title"], True, sec["color"])
+            screen.blit(sec_surf, (int(W * 0.12), curr_y))
+            curr_y += int(H * 0.038)
 
             for line in sec["lines"]:
-                line_surf = font_guide_body.render(line, True, (225, 225, 230))
-                content_surf.blit(line_surf, (15, curr_y))
-                curr_y += line_surf.get_height() + 5
+                line_surf = font_guide_text.render(line, True, (225, 215, 200))
+                screen.blit(line_surf, (int(W * 0.14), curr_y))
+                curr_y += int(H * 0.027)
+            curr_y += int(H * 0.020)
 
-            curr_y += 20
+        screen.set_clip(None)
 
-        clip_area = pygame.Rect(0, controls_scroll_y, content_w, panel_h - header_h - 20)
-        panel_surf.blit(content_surf, (30, header_h + 10), area=clip_area)
+        draw_button(screen, btn_back_rect, "< RETURN", btn_back_rect.collidepoint(mouse_pos), primary_col=(130, 32, 28))
+        hint_surf = font_bar_val.render("Use Mouse Wheel to Scroll  |  Press [SPACE] or [ESC] to Return", True, (190, 175, 150))
+        screen.blit(hint_surf, hint_surf.get_rect(center=(W // 2, int(H * 0.93))))
 
-        screen.blit(panel_surf, (panel_x, panel_y))
-        draw_button(screen, btn_back_rect, "← BACK TO MENU", btn_back_rect.collidepoint(mouse_pos), primary_col=(180, 40, 40))
+        if mouse_clicked and btn_back_rect.collidepoint(mouse_pos):
+            game_state = "PLAYING" if player["hp"] > 0 else "MENU"
 
-        scroll_hint = font_bar_val.render("Scroll with Mouse Wheel | Press ESC or BACKSPACE to return", True, (190, 180, 160))
-        screen.blit(scroll_hint, (panel_x + panel_w - scroll_hint.get_width() - 20, int(H * 0.90)))
-
+    # -----------------------------------------------------------------------
+    # 3. State: PLAYING
+    # -----------------------------------------------------------------------
     elif game_state == "PLAYING":
-        keys = pygame.key.get_pressed()
         p = player
         b = boss
+        keys = pygame.key.get_pressed()
 
-        # Check Enrage Condition (<= 10% HP or override test)
+        # Check Boss Phases
+        # Phase 1: > 66% HP
+        # Phase 2: 33% - 66% HP (Red Mist awakens, +25% damage)
+        # Phase 3: <= 33% HP or Enraged <= 10% HP (Dark Vortex, 70% faster attacks)
         is_enraged = (b["hp"] <= b["max_hp"] * 0.10) or b["enraged_override"]
+        if is_enraged or b["hp"] <= b["max_hp"] * 0.33:
+            boss_phase = 3
+        elif b["hp"] <= b["max_hp"] * 0.66:
+            boss_phase = 2
+        else:
+            boss_phase = 1
 
-        # Trigger Boss Enraged Mode Animation (plays Image 3 for 3 seconds once upon enraging)
+        # Trigger Enraged Mode (5.5-second roar transition!)
         if is_enraged and not b["enraged_triggered"]:
             b["enraged_triggered"] = True
             b["state"] = "enrage_intro"
-            b["enrage_intro_timer"] = 180    # 180 frames at 60 FPS = 3.0 seconds!
+            b["enrage_intro_timer"] = 330    # 330 frames at 60 FPS = 5.5 seconds!
             b["frame_idx"] = 0
             b["tick_count"] = 0
+            play_sfx("ground_slam", 0.8)
 
-        # Check Victory / Defeat Transitions
-        if b["hp"] <= 0:
-            b["hp"] = 0
-            game_state = "VICTORY"
-        elif p["hp"] <= 0:
-            p["hp"] = 0
-            game_state = "DEFEAT"
+        # Natural Posture Decay for Boss (if not hit for 3 seconds)
+        if b["posture"] > 0 and not b["is_stunned"]:
+            b["posture_decay_delay"] += 1
+            if b["posture_decay_delay"] >= 180:
+                b["posture"] = max(0.0, b["posture"] - (4.0 / 60.0))
 
-        # ── PLAYER STATE MACHINE & ACTIONS ────────────────────────────────
+        # Check Posture Break Stun
+        if b["posture"] >= b["max_posture"] and not b["is_stunned"]:
+            b["is_stunned"] = True
+            b["stun_timer"] = 210    # 3.5 seconds stun
+            b["state"] = "stunned"
+            b["frame_idx"] = 0
+            ground_shake_timer = 20
+            ground_shake_intensity = 14.0
+            play_sfx("posture_break", 1.0)
+
+        # Screen Shake Update
+        shake_x, shake_y = 0, 0
+        if ground_shake_timer > 0:
+            ground_shake_timer -= 1
+            decay = ground_shake_timer / 120.0
+            cur_intensity = ground_shake_intensity * min(1.0, decay + 0.25)
+            shake_x = random.randint(int(-cur_intensity), int(cur_intensity))
+            shake_y = random.randint(int(-cur_intensity), int(cur_intensity))
+
+        # Environmental updates
+        for c in clouds:
+            c["x"] += c["speed"]
+            if c["x"] > W + 200:
+                c["x"] = -300
+                c["y"] = random.randint(0, int(H * 0.12))
+
+        for smk in smoke_particles:
+            smk["x"] += smk["vx"]
+            smk["y"] += smk["vy"]
+            smk["age"] += 1
+            if smk["age"] >= smk["life"]:
+                smoke_particles.remove(smk)
+                smoke_particles.append(new_smoke())
+
+        # Update Red Mist Aura around Magistrate (Phase 2 & 3)
+        if boss_phase >= 2:
+            spawn_red_mist(b["x"], b["y"], count=3 if boss_phase == 3 else 1)
+
+        for rm in list(red_mist_particles):
+            rm["x"] += rm["vx"]
+            rm["y"] += rm["vy"]
+            rm["radius"] += 0.35
+            rm["life"] -= 1
+            if rm["life"] <= 0:
+                red_mist_particles.remove(rm)
+
+        # Update Sparks
+        for spk in list(sparks):
+            spk["x"] += spk["vx"]
+            spk["y"] += spk["vy"]
+            spk["vy"] += 0.35   # Gravity
+            spk["life"] -= 1
+            if spk["life"] <= 0:
+                sparks.remove(spk)
+
+        # Kunai Pouch Automatic Recharge
+        if p["kunai_count"] < p["kunai_max"]:
+            p["kunai_recharge_timer"] += 1
+            if p["kunai_recharge_timer"] >= 240:    # 4.0 seconds = 240 frames
+                p["kunai_count"] += 1
+                p["kunai_recharge_timer"] = 0
+
+        # --- PLAYER UPDATE ---
+        p["is_blocking"] = False
+
         if p["state"] in ("dodge", "slash", "parry", "kunai", "heal"):
             p["tick_count"] += 1
 
             if p["state"] == "heal":
-                # Channel healing for 2 seconds (120 frames)
                 p["heal_timer"] -= 1
-                # Advance 30-frame healing animation over the 2 seconds (1 frame every 4 ticks)
                 if p["tick_count"] >= 4:
                     p["tick_count"] = 0
                     p["frame_idx"] = (p["frame_idx"] + 1) % len(player_heal_frames)
 
                 if p["heal_timer"] <= 0:
-                    # Healing finishes: restore 50% HP!
                     p["hp"] = min(p["max_hp"], p["hp"] + int(p["max_hp"] * 0.50))
                     p["state"] = "idle"
                     p["frame_idx"] = 0
                     p["tick_count"] = 0
+                    play_sfx("heal_spell", 0.9)
 
             elif p["state"] == "dodge":
-                dx = DODGE_SPEED if p["facing_right"] else -DODGE_SPEED
-                p["x"] += dx
-                p["frame_idx"] += 1
-                if p["frame_idx"] >= len(dodge_frames):
-                    p["state"] = "idle"
-                    p["frame_idx"] = 0
+                dodge_vx = (MOVE_SPEED * 1.6) if p["facing_right"] else (-MOVE_SPEED * 1.6)
+                p["x"] += dodge_vx
+                if p["tick_count"] >= 1:
                     p["tick_count"] = 0
+                    p["frame_idx"] += 1
+                    if p["frame_idx"] >= len(dodge_frames):
+                        p["state"] = "idle"
+                        p["frame_idx"] = 0
 
             elif p["state"] == "slash":
-                p["frame_idx"] += 1
-                # When sword strike connects (~frame 12), damage Titan if in range
-                if p["frame_idx"] == 12:
-                    dist_to_boss = abs(p["x"] - b["x"])
-                    if dist_to_boss < int(player_h * 0.9):
-                        b["hp"] = max(0, b["hp"] - 35)
-                if p["frame_idx"] >= len(slash_frames):
-                    p["state"] = "idle"
-                    p["frame_idx"] = 0
+                if p["tick_count"] >= 1:
                     p["tick_count"] = 0
+                    p["frame_idx"] += 1
+
+                    # Blade strike frame (frame 14)
+                    if p["frame_idx"] == 14:
+                        play_sfx("slash_hit", 0.8)
+                        dist = abs(p["x"] - b["x"])
+                        facing_boss = (b["x"] > p["x"] and p["facing_right"]) or (b["x"] < p["x"] and not p["facing_right"])
+                        if dist < int(W * 0.16) and facing_boss:
+                            if b["is_stunned"]:
+                                # CRITICAL STRIKE! Deals massive damage to stunned boss!
+                                b["hp"] = max(0, b["hp"] - 250)
+                                b["is_stunned"] = False
+                                b["stun_timer"] = 0
+                                b["posture"] = 0.0
+                                ground_shake_timer = 20
+                                ground_shake_intensity = 16.0
+                                spawn_sparks(b["x"], b["y"] - boss_h * 0.5, count=30, is_golden=True)
+                                play_sfx("slash_hit", 1.0)
+                            else:
+                                b["hp"] = max(0, b["hp"] - 35)
+                                b["posture"] = min(b["max_posture"], b["posture"] + 8.0)
+                                b["posture_decay_delay"] = 0
+                                spawn_sparks(b["x"], b["y"] - boss_h * 0.5, count=8, is_golden=False)
+
+                    if p["frame_idx"] >= len(slash_frames):
+                        p["state"] = "idle"
+                        p["frame_idx"] = 0
 
             elif p["state"] == "parry":
-                p["frame_idx"] += 1
-                if p["frame_idx"] >= len(parry_frames):
-                    p["state"] = "idle"
-                    p["frame_idx"] = 0
+                if p["tick_count"] >= 1:
                     p["tick_count"] = 0
+                    p["frame_idx"] += 1
+                    if p["frame_idx"] >= len(parry_frames):
+                        p["state"] = "idle"
+                        p["frame_idx"] = 0
 
             elif p["state"] == "kunai":
-                p["frame_idx"] += 1
-                # Spawn kunai projectile at release frame (~frame 12)
-                if p["frame_idx"] == 12 and not p["kunai_spawned"]:
-                    p["kunai_spawned"] = True
-                    k_vx = KUNAI_SPEED if p["facing_right"] else -KUNAI_SPEED
-                    spawn_x = p["x"] + (int(player_h * 0.25) if p["facing_right"] else -int(player_h * 0.25))
-                    spawn_y = p["y"] - int(player_h * 0.52)
-                    projectiles.append({
-                        "x": spawn_x,
-                        "y": spawn_y,
-                        "vx": k_vx,
-                        "type": "kunai",
-                        "owner": "player",
-                        "facing_right": p["facing_right"],
-                        "damage": 25,
-                        "active": True,
-                    })
+                if p["tick_count"] >= 1:
+                    p["tick_count"] = 0
+                    p["frame_idx"] += 1
 
-                if p["frame_idx"] >= len(player_kunai_frames):
-                    p["state"] = "idle"
-                    p["frame_idx"] = 0
-                    p["kunai_spawned"] = False
+                    if p["frame_idx"] == 15 and not p["kunai_spawned"]:
+                        p["kunai_spawned"] = True
+                        k_vx = KUNAI_SPEED if p["facing_right"] else -KUNAI_SPEED
+                        spawn_x = p["x"] + (int(player_h * 0.35) if p["facing_right"] else -int(player_h * 0.35))
+                        spawn_y = p["y"] - int(player_h * 0.45)
+                        projectiles.append({
+                            "x": spawn_x,
+                            "y": spawn_y,
+                            "vx": k_vx,
+                            "type": "kunai",
+                            "owner": "player",
+                            "facing_right": p["facing_right"],
+                            "damage": 22,
+                            "active": True,
+                        })
+                        play_sfx("kunai_throw", 0.7)
+
+                    if p["frame_idx"] >= len(player_kunai_frames):
+                        p["state"] = "idle"
+                        p["frame_idx"] = 0
+                        p["kunai_spawned"] = False
 
         else:
-            # ── Check Action Key Triggers ─────────────────────────────────
-            # E: Healing Flask (Click once per game, heals 50%, takes 2s; blocked if boss is enraged!)
+            # Action Triggers
             if keys[pygame.K_e] and not p["heal_used"] and not is_enraged:
                 p["heal_used"] = True
                 p["state"] = "heal"
-                p["heal_timer"] = 120    # 120 frames at 60 FPS = 2.0 seconds
+                p["heal_timer"] = 120
                 p["frame_idx"] = 0
                 p["tick_count"] = 0
 
@@ -898,39 +1068,41 @@ while running:
                 p["state"] = "dodge"
                 p["frame_idx"] = 0
                 p["tick_count"] = 0
+
             elif keys[pygame.K_RSHIFT]:
                 p["state"] = "slash"
                 p["frame_idx"] = 0
                 p["tick_count"] = 0
+
             elif keys[pygame.K_f]:
                 p["state"] = "parry"
                 p["frame_idx"] = 0
                 p["tick_count"] = 0
-            elif keys[pygame.K_q]:
+
+            elif keys[pygame.K_q] and p["kunai_count"] > 0:
+                p["kunai_count"] -= 1
                 p["state"] = "kunai"
                 p["frame_idx"] = 0
                 p["tick_count"] = 0
                 p["kunai_spawned"] = False
+
             else:
-                # ── Horizontal Movement (A / D) ───────────────────────────
+                # Movement
                 dx = 0
                 if keys[pygame.K_a]:
-                    dx -= WALK_SPEED
+                    dx -= MOVE_SPEED
+                    p["facing_right"] = False
                 if keys[pygame.K_d]:
-                    dx += WALK_SPEED
+                    dx += MOVE_SPEED
+                    p["facing_right"] = True
 
                 if dx != 0:
+                    p["state"] = "walk"
                     p["x"] += dx
-                    p["facing_right"] = (dx > 0)
-                    if p["state"] != "walk":
-                        p["state"] = "walk"
-                        p["frame_idx"] = 0
+                    p["tick_count"] += 1
+                    if p["tick_count"] >= 1:
                         p["tick_count"] = 0
-                    else:
-                        p["tick_count"] += 1
-                        if p["tick_count"] >= 2:
-                            p["tick_count"] = 0
-                            p["frame_idx"] = (p["frame_idx"] + 1) % len(walk_frames)
+                        p["frame_idx"] = (p["frame_idx"] + 1) % len(walk_frames)
                 else:
                     p["state"] = "idle"
                     p["blink_timer"] -= 1
@@ -942,7 +1114,7 @@ while running:
                             p["is_blinking"] = False
                             p["blink_timer"] = random.randint(120, 200)
 
-            # Jump (W)
+            # Jump
             if keys[pygame.K_w] and p["on_ground"]:
                 p["vy"] = JUMP_FORCE
                 p["on_ground"] = False
@@ -958,14 +1130,24 @@ while running:
 
         p["x"] = max(center_offset, min(p["x"], W - center_offset))
 
-        # ── BOSS (TITAN) AI & BEHAVIOR ────────────────────────────────────
-        if b["state"] == "enrage_intro":
-            # Play Enraged Mode animation (Image 3) for 3 full seconds!
+        # --- BOSS (THE HOLLOW MAGISTRATE) BEHAVIOR & AI ---
+        if b["is_stunned"]:
+            b["stun_timer"] -= 1
+            if b["stun_timer"] <= 0:
+                b["is_stunned"] = False
+                b["posture"] = 0.0
+                b["state"] = "idle"
+
+        elif b["state"] == "enrage_intro":
+            # Play 150-frame Enraged sheet smoothly over 5.5 seconds (330 ticks)
             b["enrage_intro_timer"] -= 1
-            b["tick_count"] += 1
-            if b["tick_count"] >= 3:
-                b["tick_count"] = 0
-                b["frame_idx"] = (b["frame_idx"] + 1) % len(boss_enrage_frames)
+            progress = (330 - b["enrage_intro_timer"]) / 330.0
+            b["frame_idx"] = min(len(boss_enrage_frames) - 1, int(progress * len(boss_enrage_frames)))
+
+            # Intense rumble during the rage transition
+            if frame_count % 4 == 0:
+                ground_shake_timer = 4
+                ground_shake_intensity = 6.0
 
             if b["enrage_intro_timer"] <= 0:
                 b["state"] = "idle"
@@ -973,12 +1155,11 @@ while running:
                 b["tick_count"] = 0
 
         elif b["state"] in ("smash", "spear", "kunai"):
-            # Attack speed: 70% faster when enraged!
-            # Sword smash takes 1.5x time during wind-up when normal so it's telegraphed and easier to dodge
+            # Attack speed scales with Phase: Phase 3 is 70% faster!
             if b["state"] == "smash":
-                tick_interval = 1 if is_enraged else (2 if b["frame_idx"] < 17 else 1)
+                tick_interval = 1 if boss_phase == 3 else (2 if b["frame_idx"] < 17 else 1)
             else:
-                tick_interval = 1 if is_enraged else 2
+                tick_interval = 1 if boss_phase == 3 else 2
 
             b["tick_count"] += 1
             if b["tick_count"] >= tick_interval:
@@ -986,34 +1167,49 @@ while running:
                 b["frame_idx"] += 1
 
                 if b["state"] == "smash":
-                    # Sword slams ground at frame 16 -> triggers EXACT 2.0 SECONDS OF SCREEN SHAKE!
+                    # Sword impact on ground -> 2.0 full seconds of screen shake!
                     if b["frame_idx"] == 16:
-                        ground_shake_timer = 120    # 120 frames at 60 FPS = 2.0 full seconds
+                        ground_shake_timer = 120
                         ground_shake_intensity = 22.0
+                        play_sfx("ground_slam", 1.0)
 
                         if not b["smash_hit"]:
                             b["smash_hit"] = True
                             dist_to_player = abs(b["x"] - p["x"])
                             if dist_to_player < int(W * 0.18) and p["on_ground"]:
-                                if p["state"] != "dodge":
-                                    dmg = 45 if is_enraged else 30
-                                    p["hp"] = max(0, p["hp"] - dmg)
+                                base_dmg = 45 if boss_phase == 3 else (38 if boss_phase == 2 else 30)
+
+                                if p["state"] == "dodge":
+                                    pass  # Dodged successfully
+                                elif p["state"] == "parry" and p["frame_idx"] <= 14:
+                                    # PERFECT PARRY!
+                                    play_sfx("parry_metal", 1.0)
+                                    ground_shake_timer = 14
+                                    ground_shake_intensity = 10.0
+                                    spawn_sparks(p["x"], p["y"] - player_h * 0.5, count=24, is_golden=True)
+                                    b["posture"] = min(b["max_posture"], b["posture"] + 25.0)
+                                    b["posture_decay_delay"] = 0
+                                elif p["state"] == "parry":
+                                    # MISTIMED PARRY: NORMAL BLOCK (blocks 60% of damage!)
+                                    play_sfx("block_wood", 0.9)
+                                    p["hp"] = max(0, p["hp"] - int(base_dmg * 0.40))
+                                    spawn_sparks(p["x"], p["y"] - player_h * 0.5, count=8, is_golden=False)
+                                else:
+                                    p["hp"] = max(0, p["hp"] - base_dmg)
 
                     if b["frame_idx"] >= len(boss_smash_frames):
                         b["state"] = "idle"
                         b["frame_idx"] = 0
                         b["tick_count"] = 0
-                        b["smash_hit"] = False
 
                 elif b["state"] == "spear":
-                    # Spear release at frame 16
                     if b["frame_idx"] == 16 and not b["projectile_spawned"]:
                         b["projectile_spawned"] = True
-                        base_sp_speed = KUNAI_SPEED + 4
-                        sp_speed = int(base_sp_speed * 1.35) if is_enraged else base_sp_speed
+                        base_sp_speed = 17.0
+                        sp_speed = int(base_sp_speed * 1.30) if boss_phase == 3 else base_sp_speed
                         sp_vx = sp_speed if b["facing_right"] else -sp_speed
-                        spawn_x = b["x"] + (int(boss_h * 0.3) if b["facing_right"] else -int(boss_h * 0.3))
-                        spawn_y = b["y"] - int(boss_h * 0.52)
+                        spawn_x = b["x"] + (int(boss_h * 0.40) if b["facing_right"] else -int(boss_h * 0.40))
+                        spawn_y = b["y"] - int(boss_h * 0.55)
                         projectiles.append({
                             "x": spawn_x,
                             "y": spawn_y,
@@ -1021,9 +1217,10 @@ while running:
                             "type": "spear",
                             "owner": "boss",
                             "facing_right": b["facing_right"],
-                            "damage": 35 if is_enraged else 25,
+                            "damage": 38 if boss_phase == 3 else (32 if boss_phase == 2 else 25),
                             "active": True,
                         })
+                        play_sfx("kunai_throw", 0.9)
 
                     if b["frame_idx"] >= len(boss_spear_frames):
                         b["state"] = "idle"
@@ -1032,11 +1229,10 @@ while running:
                         b["projectile_spawned"] = False
 
                 elif b["state"] == "kunai":
-                    # Boss throws kunai at frame 14
                     if b["frame_idx"] == 14 and not b["projectile_spawned"]:
                         b["projectile_spawned"] = True
                         base_k_speed = KUNAI_SPEED
-                        k_speed = int(base_k_speed * 1.35) if is_enraged else base_k_speed
+                        k_speed = int(base_k_speed * 1.35) if boss_phase == 3 else base_k_speed
                         k_vx = k_speed if b["facing_right"] else -k_speed
                         spawn_x = b["x"] + (int(boss_h * 0.25) if b["facing_right"] else -int(boss_h * 0.25))
                         spawn_y = b["y"] - int(boss_h * 0.50)
@@ -1047,9 +1243,10 @@ while running:
                             "type": "kunai",
                             "owner": "boss",
                             "facing_right": b["facing_right"],
-                            "damage": 25 if is_enraged else 18,
+                            "damage": 26 if boss_phase == 3 else (22 if boss_phase == 2 else 18),
                             "active": True,
                         })
+                        play_sfx("kunai_throw", 0.7)
 
                     if b["frame_idx"] >= len(boss_spear_frames):
                         b["state"] = "idle"
@@ -1058,26 +1255,28 @@ while running:
                         b["projectile_spawned"] = False
 
         else:
-            # Boss Attack Decision (Interval 3-5 seconds, 70% FASTER when enraged: 0.9-1.5s!)
+            # Boss Attack Decisions based on distance and phase
             b["attack_cooldown"] -= 1.0 / 60.0
             if b["attack_cooldown"] <= 0:
-                base_cd = random.uniform(3.0, 5.0)
-                b["attack_cooldown"] = base_cd * 0.30 if is_enraged else base_cd
+                base_cd = random.uniform(3.0, 4.8)
+                if boss_phase == 3:
+                    b["attack_cooldown"] = base_cd * 0.30   # 70% faster!
+                elif boss_phase == 2:
+                    b["attack_cooldown"] = base_cd * 0.70
+                else:
+                    b["attack_cooldown"] = base_cd
 
                 dist = abs(b["x"] - p["x"])
-                is_far = dist > (W * 0.25)  # More than 1/4 horizontal screen width away
+                is_far = dist > (W * 0.25)
 
-                # Face player when launching attack
                 b["facing_right"] = (p["x"] > b["x"])
 
                 if is_far:
-                    # Far away: exclusively throw spear
                     b["state"] = "spear"
                     b["frame_idx"] = 0
                     b["tick_count"] = 0
                     b["projectile_spawned"] = False
                 else:
-                    # Close range: randomly pick between greatsword smash or kunai throw
                     chosen_atk = random.choice(["smash", "kunai"])
                     b["state"] = chosen_atk
                     b["frame_idx"] = 0
@@ -1086,24 +1285,21 @@ while running:
                     b["smash_hit"] = False
 
             else:
-                # ── Random Walking & Completely Random Direction Switching ─
+                # Random Walking & Direction Switching
                 b["action_timer"] -= 1.0 / 60.0
                 if b["action_timer"] <= 0:
                     b["action_timer"] = random.uniform(1.0, 4.5)
-                    # Randomly pick walk left, stand idle, walk right, or randomly flip facing direction!
                     b["walk_dir"] = random.choice([-1, 0, 1])
                     if b["walk_dir"] != 0:
                         b["facing_right"] = (b["walk_dir"] > 0)
                     else:
-                        # Completely random facing change even when standing!
                         b["facing_right"] = random.choice([True, False])
 
                 if b["walk_dir"] != 0:
-                    walk_spd = 3.2 if is_enraged else 2.0
+                    walk_spd = 3.4 if boss_phase == 3 else 2.1
                     b["x"] += b["walk_dir"] * walk_spd
                     b["facing_right"] = (b["walk_dir"] > 0)
 
-                    # Stay within battle arena bounds
                     min_bx = int(W * 0.18)
                     max_bx = int(W * 0.94)
                     if b["x"] < min_bx:
@@ -1118,9 +1314,8 @@ while running:
                 else:
                     b["state"] = "idle"
 
-                # Advance walk / idle animations
                 b["tick_count"] += 1
-                idle_speed = 1 if is_enraged else 2
+                idle_speed = 1 if boss_phase == 3 else 2
                 if b["tick_count"] >= idle_speed:
                     b["tick_count"] = 0
                     if b["state"] == "walk":
@@ -1128,39 +1323,89 @@ while running:
                     else:
                         b["frame_idx"] = (b["frame_idx"] + 1) % len(boss_idle_frames)
 
-        # ── PROJECTILES UPDATE & COLLISION ────────────────────────────────
-        for proj in projectiles:
-            if not proj["active"]:
-                continue
-
+        # --- PROJECTILE COLLISION & PARRIES ---
+        for proj in list(projectiles):
             proj["x"] += proj["vx"]
 
-            # Check off-screen
+            # Out of bounds check
             if proj["x"] < -100 or proj["x"] > W + 100:
                 proj["active"] = False
-                continue
 
-            if proj["owner"] == "player":
-                # Collision with Boss
-                if abs(proj["x"] - b["x"]) < int(boss_h * 0.28) and abs(proj["y"] - (b["y"] - boss_h * 0.5)) < int(boss_h * 0.5):
-                    b["hp"] = max(0, b["hp"] - proj["damage"])
-                    proj["active"] = False
-
-            elif proj["owner"] == "boss":
-                # Collision with Player
-                if abs(proj["x"] - p["x"]) < int(player_h * 0.25) and abs(proj["y"] - (p["y"] - player_h * 0.5)) < int(player_h * 0.5):
-                    if p["state"] == "dodge":
-                        pass  # Evasively rolled under!
-                    elif p["state"] == "parry":
-                        proj["active"] = False  # Parried!
-                    else:
-                        p["hp"] = max(0, p["hp"] - proj["damage"])
+            if proj["active"]:
+                if proj["owner"] == "player":
+                    # Hits Magistrate
+                    if abs(proj["x"] - b["x"]) < int(boss_h * 0.28) and abs(proj["y"] - (b["y"] - boss_h * 0.50)) < int(boss_h * 0.40):
                         proj["active"] = False
+                        b["hp"] = max(0, b["hp"] - proj["damage"])
+                        b["posture"] = min(b["max_posture"], b["posture"] + 5.0)
+                        b["posture_decay_delay"] = 0
+                        spawn_sparks(proj["x"], proj["y"], count=10, is_golden=False)
+                        play_sfx("slash_hit", 0.7)
 
-        projectiles = [proj for proj in projectiles if proj["active"]]
+                elif proj["owner"] == "boss":
+                    # Hits Zhao
+                    if abs(proj["x"] - p["x"]) < int(player_h * 0.28) and abs(proj["y"] - (p["y"] - player_h * 0.50)) < int(player_h * 0.40):
+                        if p["state"] == "dodge":
+                            pass  # Dodged!
+                        elif p["state"] == "parry" and p["frame_idx"] <= 14:
+                            # PERFECT PARRY ON PROJECTILE! Deflects!
+                            proj["active"] = False
+                            play_sfx("parry_metal", 1.0)
+                            spawn_sparks(proj["x"], proj["y"], count=20, is_golden=True)
+                            b["posture"] = min(b["max_posture"], b["posture"] + 18.0)
+                            b["posture_decay_delay"] = 0
+                        elif p["state"] == "parry":
+                            # NORMAL BLOCK
+                            proj["active"] = False
+                            play_sfx("block_wood", 0.8)
+                            p["hp"] = max(0, p["hp"] - int(proj["damage"] * 0.40))
+                            spawn_sparks(proj["x"], proj["y"], count=6, is_golden=False)
+                        else:
+                            proj["active"] = False
+                            p["hp"] = max(0, p["hp"] - proj["damage"])
 
-        # ── RENDER CHARACTERS & PROJECTILES ───────────────────────────────
-        # 1. Render Player (General Zhao - Solid, completely opaque!)
+            if not proj["active"]:
+                projectiles.remove(proj)
+
+        # Victory / Defeat Transitions
+        if b["hp"] <= 0:
+            game_state = "VICTORY"
+        elif p["hp"] <= 0:
+            death_count += 1
+            game_state = "DEFEAT"
+
+        # --- RENDERING BATTLEFIELD ---
+        screen.blit(bg, (shake_x, shake_y))
+
+        # Drifting Clouds
+        for c in clouds:
+            c_surf = cloud_variants[0]
+            screen.blit(c_surf, (int(c["x"]) + shake_x, int(c["y"]) + shake_y))
+
+        # Rising Smoke
+        for smk in smoke_particles:
+            smk_surf = smoke_variants[smk["variant"]]
+            alpha = int(255 * (1.0 - smk["age"] / smk["life"]))
+            smk_surf.set_alpha(alpha)
+            screen.blit(smk_surf, (int(smk["x"]) + shake_x, int(smk["y"]) + shake_y))
+
+        # Flags (Anchored to ground)
+        flag_f = (frame_count // 12) % 2
+        f1_img = flag1_b if flag_f == 1 else flag1_a
+        f2_img = flag2_b if flag_f == 1 else flag2_a
+        screen.blit(f1_img, (flag1_x + shake_x, flag1_y + shake_y))
+        screen.blit(f2_img, (flag2_x + shake_x, flag2_y + shake_y))
+
+        # Swirling Red Mist Aura (Phase 2 & 3)
+        for rm in red_mist_particles:
+            rad = max(2, int(rm["radius"]))
+            diam = rad * 2
+            mist_surf = pygame.Surface((diam, diam), pygame.SRCALPHA)
+            alpha = max(0, min(255, int(rm.get("alpha", 80))))
+            pygame.draw.circle(mist_surf, (160, 20, 20, alpha), (rad, rad), rad)
+            screen.blit(mist_surf, (int(rm["x"] - rad) + shake_x, int(rm["y"] - rad) + shake_y))
+
+        # 1. Render Player (Solid, completely opaque!)
         if p["state"] == "heal":
             p_sprite = player_heal_frames[p["frame_idx"] % len(player_heal_frames)]
             p_draw_x = int(p["x"] - pheal_center_offset) + shake_x
@@ -1195,7 +1440,7 @@ while running:
 
         screen.blit(p_sprite, (p_draw_x, p_draw_y))
 
-        # 2. Render Boss (Titan)
+        # 2. Render Boss (The Hollow Magistrate)
         if b["state"] == "enrage_intro":
             b_sprite = boss_enrage_frames[b["frame_idx"] % len(boss_enrage_frames)]
             b_draw_x = int(b["x"] - be_center) + shake_x
@@ -1204,7 +1449,7 @@ while running:
             b_sprite = boss_walk_frames[b["frame_idx"] % len(boss_walk_frames)]
             b_draw_x = int(b["x"] - bw_center) + shake_x
             b_draw_y = int(b["y"] - bw_feet) + shake_y
-        elif b["state"] == "idle":
+        elif b["state"] == "idle" or b["state"] == "stunned":
             b_sprite = boss_idle_frames[b["frame_idx"] % len(boss_idle_frames)]
             b_draw_x = int(b["x"] - bi_center) + shake_x
             b_draw_y = int(b["y"] - bi_feet) + shake_y
@@ -1212,32 +1457,45 @@ while running:
             b_sprite = boss_smash_frames[b["frame_idx"] % len(boss_smash_frames)]
             b_draw_x = int(b["x"] - bs_center) + shake_x
             b_draw_y = int(b["y"] - bs_feet) + shake_y
-        elif b["state"] == "spear":
-            b_sprite = boss_spear_frames[b["frame_idx"] % len(boss_spear_frames)]
-            b_draw_x = int(b["x"] - bsp_center) + shake_x
-            b_draw_y = int(b["y"] - bsp_feet) + shake_y
-        elif b["state"] == "kunai":
+        elif b["state"] in ("spear", "kunai"):
+            # SHRINKING FIXED: uses accurately scaled spear sheet!
             b_sprite = boss_spear_frames[b["frame_idx"] % len(boss_spear_frames)]
             b_draw_x = int(b["x"] - bsp_center) + shake_x
             b_draw_y = int(b["y"] - bsp_feet) + shake_y
 
-        # Boss source images natively face RIGHT.
-        # If facing_right is False (facing LEFT towards player), flip horizontally!
         if not b["facing_right"]:
             b_sprite = pygame.transform.flip(b_sprite, True, False)
 
-        # ── ENRAGED RED FLASHING OUTLINE ──────────────────────────────────
+        # Enraged Glowing Outline
         if is_enraged and b["state"] != "enrage_intro":
             pulse = abs(math.sin(frame_count * 0.28))
             outline_alpha = int(140 + 115 * pulse)
             mask = pygame.mask.from_surface(b_sprite)
             outline_surf = mask.to_surface(setcolor=(255, 25, 25, outline_alpha), unsetcolor=(0, 0, 0, 0))
-            for ox, oy in [(-3, 0), (3, 0), (0, -3), (0, 3), (-2, -2), (2, 2), (-2, 2), (2, -2)]:
+            for ox, oy in [(-3, 0), (3, 0), (0, -3), (0, 3), (-2, -2), (2, 2)]:
                 screen.blit(outline_surf, (b_draw_x + ox, b_draw_y + oy))
 
         screen.blit(b_sprite, (b_draw_x, b_draw_y))
 
-        # 3. Render Projectiles
+        # Stun / Critical Banner over Boss
+        if b["is_stunned"]:
+            st_text = font_stun_banner.render("★ POSTURE BROKEN — CRITICAL STRIKE! ★", True, (255, 220, 60))
+            st_shadow = font_stun_banner.render("★ POSTURE BROKEN — CRITICAL STRIKE! ★", True, (20, 10, 5))
+            st_rect = st_text.get_rect(center=(int(b["x"]) + shake_x, int(b["y"] - boss_h * 1.15) + shake_y))
+            screen.blit(st_shadow, (st_rect.x + 2, st_rect.y + 2))
+            screen.blit(st_text, st_rect)
+
+        # 3. Render Sparks
+        for spk in sparks:
+            col = spk.get("color", (255, 220, 100))
+            if isinstance(col, (tuple, list)) and len(col) >= 3 and isinstance(col[0], (int, float)):
+                safe_col = (max(0, min(255, int(col[0]))), max(0, min(255, int(col[1]))), max(0, min(255, int(col[2]))))
+            else:
+                safe_col = (255, 220, 100)
+            sz = max(1, int(spk.get("size", 2)))
+            pygame.draw.circle(screen, safe_col, (int(spk["x"]) + shake_x, int(spk["y"]) + shake_y), sz)
+
+        # 4. Render Projectiles
         for proj in projectiles:
             if proj["type"] == "kunai":
                 k_img = kunai_item_right if proj["facing_right"] else kunai_item_left
@@ -1246,56 +1504,82 @@ while running:
                 sp_img = spear_proj_right if proj["facing_right"] else spear_proj_left
                 screen.blit(sp_img, (int(proj["x"] - sp_img.get_width() // 2) + shake_x, int(proj["y"] - sp_img.get_height() // 2) + shake_y))
 
-        # 4. Render Health Bars at Top (Kept steady for UI clarity)
-        draw_health_bars(screen, p, b, is_enraged)
+        # 5. Render Health Bars & Feudal UI
+        draw_health_bars(screen, p, b, boss_phase, is_enraged)
 
+    # -----------------------------------------------------------------------
+    # 4. State: VICTORY
+    # -----------------------------------------------------------------------
     elif game_state == "VICTORY":
         overlay = pygame.Surface((W, H), pygame.SRCALPHA)
-        overlay.fill((15, 12, 5, 190))
+        overlay.fill((14, 10, 6, 215))
         screen.blit(overlay, (0, 0))
 
-        v_title = font_end_title.render("VICTORY ACHIEVED", True, (255, 220, 90))
-        v_shadow = font_end_title.render("VICTORY ACHIEVED", True, (20, 15, 5))
+        v_box = pygame.Rect((W - int(W * 0.60)) // 2, int(H * 0.16), int(W * 0.60), int(H * 0.68))
+        draw_feudal_panel(screen, v_box, border_col=(212, 163, 75), bg_col=(20, 14, 10, 245), gold_corners=True)
+
+        v_title = font_end_title.render("MAGISTRATE SLAIN", True, (255, 220, 95))
+        v_shadow = font_end_title.render("MAGISTRATE SLAIN", True, (20, 10, 5))
         v_rect = v_title.get_rect(center=(W // 2, int(H * 0.28)))
         screen.blit(v_shadow, (v_rect.x + 3, v_rect.y + 3))
         screen.blit(v_title, v_rect)
 
-        v_sub = font_end_sub.render("Titan has fallen before Great General Zhao!", True, (240, 230, 200))
-        vs_rect = v_sub.get_rect(center=(W // 2, int(H * 0.38)))
-        screen.blit(v_sub, vs_rect)
+        v_sub = font_end_sub.render(f"The Hollow Magistrate has fallen! Session Deaths: {death_count}", True, (240, 230, 200))
+        screen.blit(v_sub, v_sub.get_rect(center=(W // 2, int(H * 0.38))))
 
-        pygame.draw.line(screen, (220, 185, 90), (W // 2 - int(W * 0.25), int(H * 0.44)), (W // 2 + int(W * 0.25), int(H * 0.44)), 2)
+        draw_crossed_swords(screen, W // 2, int(H * 0.45), radius=int(H * 0.040))
 
-        draw_button(screen, btn_reset_rect, "PLAY AGAIN (RESET)", btn_reset_rect.collidepoint(mouse_pos), primary_col=(35, 130, 60))
-        draw_button(screen, btn_menu_rect, "MAIN MENU", btn_menu_rect.collidepoint(mouse_pos), primary_col=(50, 45, 50))
+        draw_button(screen, btn_reset_rect, "PLAY AGAIN (RESET)", btn_reset_rect.collidepoint(mouse_pos), primary_col=(35, 120, 50))
+        draw_button(screen, btn_menu_rect, "MAIN MENU", btn_menu_rect.collidepoint(mouse_pos), primary_col=(35, 30, 28))
 
         hint = font_bar_val.render("Press [R] or [ENTER] to Play Again  |  Press [ESC] for Main Menu", True, (200, 190, 160))
-        screen.blit(hint, hint.get_rect(center=(W // 2, int(H * 0.74))))
+        screen.blit(hint, hint.get_rect(center=(W // 2, int(H * 0.76))))
 
+        if mouse_clicked:
+            if btn_reset_rect.collidepoint(mouse_pos):
+                reset_battle()
+                game_state = "PLAYING"
+            elif btn_menu_rect.collidepoint(mouse_pos):
+                reset_battle()
+                game_state = "MENU"
+
+    # -----------------------------------------------------------------------
+    # 5. State: DEFEAT
+    # -----------------------------------------------------------------------
     elif game_state == "DEFEAT":
         overlay = pygame.Surface((W, H), pygame.SRCALPHA)
-        overlay.fill((30, 5, 5, 205))
+        overlay.fill((25, 6, 6, 225))
         screen.blit(overlay, (0, 0))
 
-        d_title = font_end_title.render("YOU DIED", True, (230, 40, 40))
-        d_shadow = font_end_title.render("YOU DIED", True, (10, 0, 0))
+        d_box = pygame.Rect((W - int(W * 0.60)) // 2, int(H * 0.16), int(W * 0.60), int(H * 0.68))
+        draw_feudal_panel(screen, d_box, border_col=(180, 32, 28), bg_col=(22, 10, 10, 245), gold_corners=True)
+
+        d_title = font_end_title.render("YOU DIED", True, (240, 45, 45))
+        d_shadow = font_end_title.render("YOU DIED", True, (15, 0, 0))
         d_rect = d_title.get_rect(center=(W // 2, int(H * 0.28)))
         screen.blit(d_shadow, (d_rect.x + 4, d_rect.y + 4))
         screen.blit(d_title, d_rect)
 
-        d_sub = font_end_sub.render("Great General Zhao has perished in battle against Titan...", True, (230, 190, 190))
-        ds_rect = d_sub.get_rect(center=(W // 2, int(H * 0.38)))
-        screen.blit(d_sub, ds_rect)
+        d_sub = font_end_sub.render(f"Great General Zhao has perished in battle... (Deaths: {death_count})", True, (230, 190, 190))
+        screen.blit(d_sub, d_sub.get_rect(center=(W // 2, int(H * 0.38))))
 
-        pygame.draw.line(screen, (200, 50, 50), (W // 2 - int(W * 0.25), int(H * 0.44)), (W // 2 + int(W * 0.25), int(H * 0.44)), 2)
+        draw_crossed_swords(screen, W // 2, int(H * 0.45), radius=int(H * 0.040))
 
-        draw_button(screen, btn_reset_rect, "TRY AGAIN (RESET)", btn_reset_rect.collidepoint(mouse_pos), primary_col=(180, 35, 35))
-        draw_button(screen, btn_menu_rect, "MAIN MENU", btn_menu_rect.collidepoint(mouse_pos), primary_col=(50, 45, 50))
+        draw_button(screen, btn_reset_rect, "TRY AGAIN (INSTANT REVIVE)", btn_reset_rect.collidepoint(mouse_pos), primary_col=(160, 30, 26))
+        draw_button(screen, btn_menu_rect, "MAIN MENU", btn_menu_rect.collidepoint(mouse_pos), primary_col=(35, 30, 28))
 
-        hint = font_bar_val.render("Press [R] or [ENTER] to Try Again  |  Press [ESC] for Main Menu", True, (190, 150, 150))
-        screen.blit(hint, hint.get_rect(center=(W // 2, int(H * 0.74))))
+        hint = font_bar_val.render("Press [R] or [ENTER] to Revive Instantly  |  Press [ESC] for Main Menu", True, (200, 160, 160))
+        screen.blit(hint, hint.get_rect(center=(W // 2, int(H * 0.76))))
 
-    # ── Display Flip & Clock ──────────────────────────────────────────────
+        if mouse_clicked:
+            if btn_reset_rect.collidepoint(mouse_pos):
+                reset_battle()
+                game_state = "PLAYING"
+            elif btn_menu_rect.collidepoint(mouse_pos):
+                reset_battle()
+                game_state = "MENU"
+
+    # Display Flip & Tick
     pygame.display.flip()
     clock.tick(60)
 
