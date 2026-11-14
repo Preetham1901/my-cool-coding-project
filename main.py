@@ -28,7 +28,7 @@ background = pygame.transform.scale(load("background.jpg"), (W, H))
 # ---------------------------------------------------------------------------
 # Flag sprites  (2 frames each, cycled to simulate waving)
 # ---------------------------------------------------------------------------
-FLAG_SCALE = 0.18  # fraction of screen height
+FLAG_SCALE = 0.27  # fraction of screen height (50% bigger)
 
 flag1_frames = [load("flag1_a.png"), load("flag1_b.png")]
 flag2_frames = [load("flag2_a.png"), load("flag2_b.png")]
@@ -46,8 +46,9 @@ flag1_frames = [scale_flag(f) for f in flag1_frames]
 flag2_frames = [scale_flag(f) for f in flag2_frames]
 
 # Positions – roughly where the flags sit in the original artwork
-flag1_base = (int(W * 0.27), int(H * 0.28))   # left flag
-flag2_base = (int(W * 0.65), int(H * 0.28))   # right flag
+# Anchor positions – defined by the BOTTOM of each flag so they grow upward
+flag1_bottom = (int(W * 0.15), int(H * 0.73))   # left flag
+flag2_bottom = (int(W * 0.77), int(H * 0.73))   # right flag
 
 # ---------------------------------------------------------------------------
 # Cloud layer  (2 frames, scrolling horizontally)
@@ -164,13 +165,15 @@ while running:
     # Slight horizontal sway using a sine wave
     sway = math.sin(frame_count * 0.04) * 3  # ±3 pixels
 
-    # Flag 1 (left)
+    # Flag 1 (left) – position from bottom anchor
     f1 = flag1_frames[flag_frame_idx]
-    screen.blit(f1, (flag1_base[0] + int(sway), flag1_base[1]))
+    f1_y = flag1_bottom[1] - f1.get_height()
+    screen.blit(f1, (flag1_bottom[0] + int(sway), f1_y))
 
-    # Flag 2 (right) – use opposite sway for variety
+    # Flag 2 (right) – position from bottom anchor
     f2 = flag2_frames[flag_frame_idx]
-    screen.blit(f2, (flag2_base[0] - int(sway), flag2_base[1]))
+    f2_y = flag2_bottom[1] - f2.get_height()
+    screen.blit(f2, (flag2_bottom[0] - int(sway), f2_y))
 
     # --- Smoke (rising) ---------------------------------------------------
     smoke_frame_idx = (frame_count // SMOKE_ANIM_SPEED) % 2
