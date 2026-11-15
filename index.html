@@ -1,0 +1,2204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Haven Hackathon - Shinobi: Legend of Zhao</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #0c0809;
+      background-image: radial-gradient(circle at center, #1a0f12 0%, #080506 100%);
+      font-family: 'Cinzel', 'Palatino Linotype', 'Book Antiqua', 'Georgia', serif;
+      color: #f5e8d0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    #game-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      max-width: 177.78vh; /* 16:9 Aspect Ratio */
+      max-height: 56.25vw;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      box-shadow: 0 0 60px rgba(0, 0, 0, 0.9), 0 0 15px rgba(180, 40, 30, 0.3);
+      border: 2px solid #3d261e;
+    }
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      image-rendering: -webkit-optimize-contrast;
+      image-rendering: crisp-edges;
+      cursor: crosshair;
+    }
+    #ui-bar {
+      position: absolute;
+      top: 10px;
+      right: 14px;
+      display: flex;
+      gap: 10px;
+      z-index: 100;
+    }
+    .feudal-btn {
+      background: linear-gradient(180deg, #2a1816 0%, #150a0a 100%);
+      border: 1px solid #c8a355;
+      color: #f7e6c4;
+      padding: 6px 14px;
+      font-size: 13px;
+      font-family: inherit;
+      letter-spacing: 1px;
+      cursor: pointer;
+      border-radius: 2px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.6);
+      transition: all 0.2s ease;
+      text-transform: uppercase;
+    }
+    .feudal-btn:hover {
+      background: linear-gradient(180deg, #481e18 0%, #260f0e 100%);
+      border-color: #ffd770;
+      color: #fff;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 10px rgba(180, 40, 30, 0.5);
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <canvas id="gameCanvas" width="1280" height="720"></canvas>
+    <div id="ui-bar">
+      <button id="btn-audio" class="feudal-btn">🔊 AUDIO: ON</button>
+      <button id="btn-fullscreen" class="feudal-btn">⛶ FULLSCREEN</button>
+    </div>
+  </div>
+
+  <script>
+  (function() {
+    'use strict';
+
+    // -------------------------------------------------------------------------
+    // Canvas & Scale Configuration (1280x720 Native Virtual Resolution)
+    // -------------------------------------------------------------------------
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const W = 1280;
+    const H = 720;
+    const GROUND_Y = Math.floor(H * 0.88); // 633px
+    const TOWER_H = 3400;
+
+    // -------------------------------------------------------------------------
+    // Feudal Web Audio Synthesizer (Zero External Audio File Dependency!)
+    // -------------------------------------------------------------------------
+    class FeudalAudioEngine {
+      constructor() {
+        this.ctx = null;
+        this.muted = false;
+        this.bgmPlaying = false;
+        this.bgmMode = 'normal'; // 'normal' | 'enraged'
+        this.bgmTimer = null;
+        this.step = 0;
+      }
+
+      init() {
+        if (!this.ctx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          if (AudioContext) {
+            this.ctx = new AudioContext();
+          }
+        }
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+
+      toggleMute() {
+        this.muted = !this.muted;
+        return !this.muted;
+      }
+
+      // Procedural Japanese Shamisen / Plucked String Synth
+      playPluck(freq, duration = 0.5, type = 'sawtooth', vol = 0.25) {
+        if (this.muted || !this.ctx) return;
+        try {
+          const now = this.ctx.currentTime;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          const filter = this.ctx.createBiquadFilter();
+
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, now);
+
+          filter.type = 'lowpass';
+          filter.frequency.setValueAtTime(freq * 3.5, now);
+          filter.frequency.exponentialRampToValueAtTime(120, now + duration);
+
+          gain.gain.setValueAtTime(vol, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+          osc.connect(filter);
+          filter.connect(gain);
+          gain.connect(this.ctx.destination);
+
+          osc.start(now);
+          osc.stop(now + duration);
+        } catch(e) {}
+      }
+
+      // Procedural Taiko Drum Hit
+      playTaiko(bassFreq = 85, duration = 0.45, vol = 0.5) {
+        if (this.muted || !this.ctx) return;
+        try {
+          const now = this.ctx.currentTime;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(bassFreq, now);
+          osc.frequency.exponentialRampToValueAtTime(32, now + duration);
+
+          gain.gain.setValueAtTime(vol, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+
+          osc.start(now);
+          osc.stop(now + duration);
+
+          // Rim attack click
+          const click = this.ctx.createOscillator();
+          const clickGain = this.ctx.createGain();
+          click.type = 'triangle';
+          click.frequency.setValueAtTime(420, now);
+          clickGain.gain.setValueAtTime(vol * 0.4, now);
+          clickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+          click.connect(clickGain);
+          clickGain.connect(this.ctx.destination);
+          click.start(now);
+          click.stop(now + 0.05);
+        } catch(e) {}
+      }
+
+      // Procedural SFX library
+      playSFX(name, vol = 0.5) {
+        if (this.muted || !this.ctx) return;
+        this.init();
+        const now = this.ctx.currentTime;
+
+        try {
+          if (name === 'slash_hit') {
+            // Metallic blade slice
+            const noise = this.ctx.createBufferSource();
+            const buffer = this.ctx.createBuffer(1, this.ctx.sampleRate * 0.18, this.ctx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < buffer.length; i++) data[i] = Math.random() * 2 - 1;
+            noise.buffer = buffer;
+
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.setValueAtTime(2800, now);
+            filter.Q.value = 3.0;
+
+            const gain = this.ctx.createGain();
+            gain.gain.setValueAtTime(vol * 0.7, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+            noise.connect(filter);
+            filter.connect(gain);
+            gain.connect(this.ctx.destination);
+            noise.start(now);
+          } else if (name === 'parry_metal') {
+            // High crisp metal deflect ring
+            [1550, 2480, 3720].forEach((freq, idx) => {
+              const osc = this.ctx.createOscillator();
+              const gain = this.ctx.createGain();
+              osc.type = 'sine';
+              osc.frequency.setValueAtTime(freq, now);
+              gain.gain.setValueAtTime(vol * (0.5 / (idx + 1)), now);
+              gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+              osc.connect(gain);
+              gain.connect(this.ctx.destination);
+              osc.start(now);
+              osc.stop(now + 0.45);
+            });
+          } else if (name === 'block_wood') {
+            // Guard impact thud
+            this.playPluck(140, 0.15, 'square', vol * 0.5);
+          } else if (name === 'ground_slam') {
+            // Heavy shockwave crash
+            this.playTaiko(110, 0.8, vol * 0.9);
+          } else if (name === 'kunai_throw') {
+            // Whistling shuriken throw
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(950, now);
+            osc.frequency.exponentialRampToValueAtTime(350, now + 0.12);
+            gain.gain.setValueAtTime(vol * 0.35, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.12);
+          } else if (name === 'heal_spell') {
+            // Shimmering mystical bell
+            [523.25, 659.25, 783.99, 1046.5].forEach((freq, idx) => {
+              setTimeout(() => {
+                this.playPluck(freq, 0.4, 'sine', vol * 0.4);
+              }, idx * 70);
+            });
+          } else if (name === 'posture_break') {
+            // Resonant temple gong
+            this.playTaiko(65, 1.2, vol * 0.9);
+            [440, 880, 1320].forEach(f => this.playPluck(f, 0.9, 'triangle', vol * 0.3));
+          }
+        } catch(e) {}
+      }
+
+      // Procedural Japanese Battle Music Sequencer
+      startBGM() {
+        if (this.bgmPlaying) return;
+        this.bgmPlaying = true;
+        this.step = 0;
+        const tick = () => {
+          if (!this.bgmPlaying) return;
+          this.playBGMStep();
+          const bpm = (this.bgmMode === 'enraged') ? 145 : 98;
+          const interval = (60 / bpm) * 1000 / 2; // 8th notes
+          this.bgmTimer = setTimeout(tick, interval);
+        };
+        tick();
+      }
+
+      setBGMMode(mode) {
+        this.bgmMode = mode;
+      }
+
+      playBGMStep() {
+        if (this.muted || !this.ctx) return;
+        // Pentatonic Insen Scale: D, Eb, G, A, C, D (Hz)
+        const scale = [146.83, 155.56, 196.00, 220.00, 261.63, 293.66, 311.13, 392.00, 440.00];
+        const s = this.step % 16;
+
+        // Taiko Drum Pattern
+        if (s === 0 || s === 6 || s === 10) {
+          this.playTaiko(75, 0.4, 0.35);
+        } else if (s === 8 || s === 14) {
+          this.playTaiko(95, 0.25, 0.22);
+        }
+        if (this.bgmMode === 'enraged' && (s % 2 === 0 || s === 15)) {
+          this.playTaiko(110, 0.2, 0.3);
+        }
+
+        // Shamisen / Koto Melody
+        const melodyNormal = [0, -1, 3, 4, -1, 2, 3, -1, 5, 4, 3, 2, -1, 3, 1, 0];
+        const melodyEnraged = [5, 4, 7, 5, 8, 7, 5, 4, 3, 5, 4, 3, 2, 3, 1, 0];
+        const noteIdx = (this.bgmMode === 'enraged') ? melodyEnraged[s] : melodyNormal[s];
+
+        if (noteIdx >= 0 && noteIdx < scale.length) {
+          const freq = scale[noteIdx];
+          const oct = (this.bgmMode === 'enraged') ? 2.0 : 1.0;
+          this.playPluck(freq * oct, 0.35, 'sawtooth', 0.12);
+        }
+
+        this.step++;
+      }
+    }
+
+    const audio = new FeudalAudioEngine();
+
+    // -------------------------------------------------------------------------
+    // Asset Loader (Images from assets/)
+    // -------------------------------------------------------------------------
+    const ASSET_PATHS = {
+      tower_bg: 'assets/tower_bg.jpg',
+      background: 'assets/background.jpg',
+      walk: 'assets/walking_30_frames.png',
+      dodge: 'assets/rolling_30_frames.png',
+      slash: 'assets/basic_slash_30_frames.png',
+      parry: 'assets/perfect_parry_30_frames.png',
+      player_kunai: 'assets/player_kunai_new.png',
+      player_heal: 'assets/player_heal.png',
+      boss_idle: 'assets/boss_idle_new.png',
+      boss_walk: 'assets/boss_walk.png',
+      boss_smash: 'assets/boss_smash.png',
+      boss_spear: 'assets/boss_spear.png',
+      boss_enrage: 'assets/boss_enrage.png',
+      boss_ascent: 'assets/boss_ascent.png',
+      boss_descent: 'assets/boss_descent.png',
+      kunai_item: 'assets/kunai_projectile.png',
+      flag1_a: 'assets/flag1_a.png',
+      flag1_b: 'assets/flag1_b.png',
+      flag2_a: 'assets/flag2_a.png',
+      flag2_b: 'assets/flag2_b.png',
+      clouds_1: 'assets/clouds_1.png',
+      clouds_2: 'assets/clouds_2.png',
+      smoke_1: 'assets/smoke_1.png',
+      smoke_2: 'assets/smoke_2.png'
+    };
+
+    const images = {};
+    let totalAssets = Object.keys(ASSET_PATHS).length;
+    let loadedAssets = 0;
+    let assetsLoaded = false;
+
+    function loadAllImages() {
+      for (const [key, path] of Object.entries(ASSET_PATHS)) {
+        const img = new Image();
+        img.onload = () => {
+          images[key] = img;
+          loadedAssets++;
+          if (loadedAssets >= totalAssets) {
+            assetsLoaded = true;
+          }
+        };
+        img.onerror = () => {
+          console.warn(`Could not load ${path}, will use fallback procedural graphics.`);
+          loadedAssets++;
+          if (loadedAssets >= totalAssets) {
+            assetsLoaded = true;
+          }
+        };
+        img.src = path;
+      }
+    }
+
+    // Grid frame drawer helper
+    function drawGridFrame(img, rows, cols, frameIdx, x, y, destW, destH, flipX = false) {
+      if (!img || !img.complete || img.naturalWidth === 0) {
+        // Fallback placeholder box
+        ctx.fillStyle = '#b32420';
+        ctx.fillRect(x, y, destW, destH);
+        return;
+      }
+      const totalFrames = rows * cols;
+      const idx = Math.max(0, Math.min(totalFrames - 1, frameIdx % totalFrames));
+      const r = Math.floor(idx / cols);
+      const c = idx % cols;
+
+      const sw = img.naturalWidth;
+      const sh = img.naturalHeight;
+      const x0 = Math.floor(c * sw / cols);
+      const x1 = Math.floor((c + 1) * sw / cols);
+      const y0 = Math.floor(r * sh / rows);
+      const y1 = Math.floor((r + 1) * sh / rows);
+      const fw = x1 - x0;
+      const fh = y1 - y0;
+
+      ctx.save();
+      if (flipX) {
+        ctx.translate(x + destW, y);
+        ctx.scale(-1, 1);
+        ctx.drawImage(img, x0, y0, fw, fh, 0, 0, destW, destH);
+      } else {
+        ctx.drawImage(img, x0, y0, fw, fh, x, y, destW, destH);
+      }
+      ctx.restore();
+    }
+
+    // -------------------------------------------------------------------------
+    // Feudal Japanese UI Drawing Helpers
+    // -------------------------------------------------------------------------
+    function drawFeudalPanel(x, y, w, h, borderCol = '#c8a355', bgCol = 'rgba(18, 12, 12, 0.94)', goldCorners = true) {
+      ctx.fillStyle = bgCol;
+      ctx.fillRect(x, y, w, h);
+
+      ctx.strokeStyle = borderCol;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, w, h);
+
+      // Inner thin rim
+      ctx.strokeStyle = 'rgba(212, 163, 75, 0.35)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 3, y + 3, w - 6, h - 6);
+
+      if (goldCorners) {
+        const cLen = 14;
+        ctx.strokeStyle = '#ffd770';
+        ctx.lineWidth = 3;
+        // Top-left
+        ctx.beginPath(); ctx.moveTo(x - 2, y + cLen); ctx.lineTo(x - 2, y - 2); ctx.lineTo(x + cLen, y - 2); ctx.stroke();
+        // Top-right
+        ctx.beginPath(); ctx.moveTo(x + w - cLen, y - 2); ctx.lineTo(x + w + 2, y - 2); ctx.lineTo(x + w + 2, y + cLen); ctx.stroke();
+        // Bottom-left
+        ctx.beginPath(); ctx.moveTo(x - 2, y + h - cLen); ctx.lineTo(x - 2, y + h + 2); ctx.lineTo(x + cLen, y + h + 2); ctx.stroke();
+        // Bottom-right
+        ctx.beginPath(); ctx.moveTo(x + w - cLen, y + h + 2); ctx.lineTo(x + w + 2, y + h + 2); ctx.lineTo(x + w + 2, y + h - cLen); ctx.stroke();
+      }
+    }
+
+    function drawFeudalButton(btnRect, text, isHover, primaryCol = '#8c201c') {
+      const bg = isHover ? '#a62924' : primaryCol;
+      drawFeudalPanel(btnRect.x, btnRect.y, btnRect.w, btnRect.h, isHover ? '#ffd770' : '#c8a355', bg, isHover);
+      ctx.fillStyle = isHover ? '#ffffff' : '#f5e8d0';
+      ctx.font = 'bold 15px inherit';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, btnRect.x + btnRect.w / 2, btnRect.y + btnRect.h / 2);
+    }
+
+    // -------------------------------------------------------------------------
+    // Game Physics, Player & Boss Scaling Constants
+    // -------------------------------------------------------------------------
+    const FLAG_SCALE = 0.35;
+    const flag_h = Math.floor(H * FLAG_SCALE); // 252px
+    const PLAYER_SCALE = FLAG_SCALE * 1.10;   // ~0.385
+    const player_h = Math.floor(H * PLAYER_SCALE); // 277px
+
+    // Arena Player Spritesheet dimensions
+    const sheet_scale = player_h / 270.0;
+    const frame_w = Math.floor(360 * sheet_scale);
+    const frame_h = Math.floor(360 * sheet_scale);
+    const feet_offset = Math.floor(337 * sheet_scale);
+    const center_offset = Math.floor(frame_w / 2);
+
+    const pk_scale = player_h / 140.0;
+    const pk_w = Math.floor(171 * pk_scale);
+    const pk_h = Math.floor(171 * pk_scale);
+    const pk_feet_offset = Math.floor(164 * pk_scale);
+
+    const ph_scale = player_h / 155.0;
+    const pheal_w = Math.floor(171 * ph_scale);
+    const pheal_h = Math.floor(171 * ph_scale);
+    const pheal_feet_offset = Math.floor(165 * ph_scale);
+
+    // Pagoda Tower 70% scaled down player (30% scale, ~83px tall)
+    const TOWER_SCALE = 0.30;
+    const tower_player_h = Math.floor(player_h * TOWER_SCALE);
+    const tower_frame_w = Math.floor(frame_w * TOWER_SCALE);
+    const tower_frame_h = Math.floor(frame_h * TOWER_SCALE);
+    const tower_feet_offset = Math.floor(feet_offset * TOWER_SCALE);
+    const tower_center_offset = Math.floor(tower_frame_w / 2);
+
+    const tower_pk_w = Math.floor(pk_w * TOWER_SCALE);
+    const tower_pk_h = Math.floor(pk_h * TOWER_SCALE);
+    const tower_pk_feet = Math.floor(pk_feet_offset * TOWER_SCALE);
+
+    // Boss Scaling (120% of player)
+    const boss_h = Math.floor(player_h * 1.20);
+    const boss_scale = boss_h / 148.0;
+
+    const bi_w = Math.floor(170.67 * boss_scale);
+    const bi_h = Math.floor(170.6 * boss_scale);
+    const bi_feet = Math.floor(152 * boss_scale);
+    const bi_center = Math.floor(bi_w / 2);
+
+    const bw_w = bi_w;
+    const bw_h = bi_h;
+    const bw_feet = Math.floor(165 * boss_scale);
+
+    const bs_w = bi_w;
+    const bs_h = bi_h;
+    const bs_feet = Math.floor(162 * boss_scale);
+
+    const spear_scale = boss_h / 131.0;
+    const bsp_w = Math.floor(170.67 * spear_scale);
+    const bsp_h = Math.floor(184.8 * spear_scale);
+    const bsp_feet = Math.floor(159 * spear_scale);
+
+    const be_scale = boss_h / 55.0;
+    const be_w = Math.floor(68.2 * be_scale);
+    const be_h = Math.floor(68.266 * be_scale);
+    const be_feet = Math.floor(62 * be_scale);
+
+    const basc_w = bi_w;
+    const basc_h = bi_h;
+    const basc_feet = Math.floor(165 * boss_scale);
+
+    const bdesc_w = bi_w;
+    const bdesc_h = bi_h;
+    const bdesc_feet = Math.floor(162 * boss_scale);
+
+    const BASE_MOVE_SPEED = 7.0;
+    const JUMP_FORCE = -17.5;
+    const GRAVITY = 0.85;
+    const BASE_KUNAI_SPEED = 24.0;
+
+    // -------------------------------------------------------------------------
+    // Game State & Match Variables
+    // -------------------------------------------------------------------------
+    let gameState = 'TOWER'; // 'TOWER' | 'PLAYING' | 'ROUND_OVER' | 'MATCH_OVER'
+    let currentRound = 1;
+    let playerRoundWins = 0;
+    let magistrateRoundWins = 0;
+    let roundOverTimer = 0;
+    let roundOverMsg = '';
+    let roundOverSub = '';
+    let isMatchDefeat = false;
+    let isMatchVictory = false;
+
+    // Bounce Back Buffs
+    let playerHpBuff = 0;        // +30 Max HP on 1st loss
+    let playerSpeedBuff = false; // +25% Speed & Attack on 2nd loss
+
+    // Tower Level Variables
+    let towerCameraY = TOWER_H - H;
+    let towerIntroDismissed = false;
+    let towerDoorMsg = '';
+    let towerDoorTimer = 0;
+    let towerDamageCooldown = 0;
+
+    // Shake & Sparks
+    let groundShakeTimer = 0;
+    let groundShakeIntensity = 0;
+    let sparks = [];
+    let projectiles = [];
+
+    // Entities
+    const player = {
+      x: Math.floor(W * 0.20),
+      y: GROUND_Y,
+      vy: 0.0,
+      facing_right: true,
+      on_ground: true,
+      jumps_left: 2,
+      jump_key_prev: false,
+      state: 'idle',
+      frame_idx: 0,
+      anim_time: 0.0,
+      tick_count: 0,
+      hp: 100,
+      max_hp: 100,
+      displayed_hp: 100.0,
+      posture: 0.0,
+      max_posture: 100.0,
+      posture_decay_delay: 0,
+      kunai_count: 5,
+      kunai_max: 5,
+      kunai_recharge_timer: 0,
+      kunai_spawned: false,
+      heal_used: false,
+      heal_timer: 0,
+      is_blinking: false,
+      blink_timer: 120
+    };
+
+    const boss = {
+      x: Math.floor(W * 0.75),
+      y: GROUND_Y,
+      vx: 0.0,
+      facing_right: false,
+      state: 'idle',
+      frame_idx: 0,
+      anim_time: 0.0,
+      tick_count: 0,
+      hp: 1000,
+      max_hp: 1000,
+      displayed_hp: 1000.0,
+      posture: 0.0,
+      max_posture: 100.0,
+      posture_decay_delay: 0,
+      is_stunned: false,
+      stun_timer: 0,
+      action_timer: 1.0,
+      projectile_spawned: false,
+      smash_hit: false,
+      slam_timer: 0,
+      slam_target_x: Math.floor(W * 0.50),
+      slam_hit: false
+    };
+
+    let bossPhase = 1;
+    let isEnraged = false;
+    let enrageIntroPlayed = false;
+
+    // -------------------------------------------------------------------------
+    // Pagoda Level Construction (Matching the Artwork)
+    // -------------------------------------------------------------------------
+    const summit_platform_y = TOWER_H - 2700;
+    const towerPlatforms = [
+      { rect: { x: 0, y: TOWER_H - 80, w: W, h: 90 }, type: 'ground' },
+      { rect: { x: Math.floor(W * 0.04), y: TOWER_H - 220, w: Math.floor(W * 0.34), h: 26 }, type: 'stone' },
+      { rect: { x: Math.floor(W * 0.50), y: TOWER_H - 360, w: Math.floor(W * 0.42), h: 26 }, type: 'timber' },
+      { rect: { x: Math.floor(W * 0.25), y: TOWER_H - 500, w: Math.floor(W * 0.32), h: 20 }, type: 'bridge' },
+      { rect: { x: Math.floor(W * 0.04), y: TOWER_H - 650, w: Math.floor(W * 0.35), h: 26 }, type: 'roof' },
+      { rect: { x: Math.floor(W * 0.04), y: TOWER_H - 790, w: Math.floor(W * 0.22), h: 24 }, type: 'stone' },
+
+      { rect: { x: Math.floor(W * 0.46), y: TOWER_H - 940, w: Math.floor(W * 0.46), h: 28 }, type: 'stone' },
+      { rect: { x: Math.floor(W * 0.23), y: TOWER_H - 1090, w: Math.floor(W * 0.32), h: 20 }, type: 'bridge' },
+      { rect: { x: Math.floor(W * 0.48), y: TOWER_H - 1240, w: Math.floor(W * 0.46), h: 32 }, type: 'torii_terrace' },
+      { rect: { x: Math.floor(W * 0.80), y: TOWER_H - 1390, w: Math.floor(W * 0.18), h: 24 }, type: 'timber' },
+      { rect: { x: Math.floor(W * 0.08), y: TOWER_H - 1550, w: Math.floor(W * 0.36), h: 26 }, type: 'stone' },
+
+      { rect: { x: Math.floor(W * 0.30), y: TOWER_H - 1710, w: Math.floor(W * 0.34), h: 20 }, type: 'bridge' },
+      { rect: { x: Math.floor(W * 0.54), y: TOWER_H - 1880, w: Math.floor(W * 0.38), h: 26 }, type: 'roof' },
+      { rect: { x: Math.floor(W * 0.05), y: TOWER_H - 2050, w: Math.floor(W * 0.34), h: 26 }, type: 'roof' },
+      { rect: { x: Math.floor(W * 0.04), y: TOWER_H - 2190, w: Math.floor(W * 0.20), h: 24 }, type: 'timber' },
+      { rect: { x: Math.floor(W * 0.56), y: TOWER_H - 2350, w: Math.floor(W * 0.32), h: 24 }, type: 'timber' },
+      { rect: { x: Math.floor(W * 0.40), y: TOWER_H - 2520, w: Math.floor(W * 0.32), h: 24 }, type: 'roof' },
+
+      { rect: { x: Math.floor(W * 0.20), y: summit_platform_y, w: Math.floor(W * 0.60), h: 36 }, type: 'summit' }
+    ];
+
+    const towerLadders = [
+      { x: Math.floor(W * 0.36), top: TOWER_H - 360, bot: TOWER_H - 80 },
+      { x: Math.floor(W * 0.74), top: TOWER_H - 500, bot: TOWER_H - 360 },
+      { x: Math.floor(W * 0.18), top: TOWER_H - 790, bot: TOWER_H - 650 },
+      { x: Math.floor(W * 0.76), top: TOWER_H - 1240, bot: TOWER_H - 940 },
+      { x: Math.floor(W * 0.22), top: TOWER_H - 1710, bot: TOWER_H - 1550 },
+      { x: Math.floor(W * 0.70), top: TOWER_H - 2350, bot: TOWER_H - 1880 }
+    ];
+
+    let towerMinions = [];
+    function initTowerMinions() {
+      towerMinions = [
+        { x: Math.floor(W * 0.62), y: TOWER_H - 360, min_x: Math.floor(W * 0.52), max_x: Math.floor(W * 0.88), vx: 1.6, alive: true, facing_right: true },
+        { x: Math.floor(W * 0.18), y: TOWER_H - 650, min_x: Math.floor(W * 0.06), max_x: Math.floor(W * 0.36), vx: -1.8, alive: true, facing_right: false },
+        { x: Math.floor(W * 0.68), y: TOWER_H - 940, min_x: Math.floor(W * 0.48), max_x: Math.floor(W * 0.88), vx: 2.0, alive: true, facing_right: true },
+        { x: Math.floor(W * 0.22), y: TOWER_H - 1550, min_x: Math.floor(W * 0.10), max_x: Math.floor(W * 0.40), vx: -2.2, alive: true, facing_right: false },
+        { x: Math.floor(W * 0.68), y: TOWER_H - 1880, min_x: Math.floor(W * 0.56), max_x: Math.floor(W * 0.88), vx: 2.4, alive: true, facing_right: true },
+        { x: Math.floor(W * 0.20), y: TOWER_H - 2050, min_x: Math.floor(W * 0.08), max_x: Math.floor(W * 0.36), vx: -2.4, alive: true, facing_right: false },
+        { x: Math.floor(W * 0.54), y: TOWER_H - 2520, min_x: Math.floor(W * 0.42), max_x: Math.floor(W * 0.70), vx: 2.5, alive: true, facing_right: true }
+      ];
+    }
+
+    const towerNPC = {
+      name: "Elder Shinobi Musashi",
+      title: "Keeper of the Ashen Record",
+      x: Math.floor(W * 0.62),
+      y: TOWER_H - 1240,
+      w: 70,
+      h: 95
+    };
+
+    const towerGate = {
+      x: Math.floor(W * 0.50) - 75,
+      y: summit_platform_y - 140,
+      w: 150,
+      h: 140
+    };
+
+    // Environmental Ambient Particles
+    const ambientEmbers = [];
+    for (let i = 0; i < 40; i++) {
+      ambientEmbers.push({
+        x: Math.random() * W,
+        y: Math.random() * TOWER_H,
+        vx: (Math.random() - 0.5) * 0.4,
+        vy: -0.5 - Math.random() * 0.8,
+        size: 1.5 + Math.random() * 2.5,
+        alpha: 0.3 + Math.random() * 0.6
+      });
+    }
+
+    const momijiLeaves = [];
+    for (let i = 0; i < 28; i++) {
+      momijiLeaves.push({
+        x: Math.random() * W,
+        y: Math.random() * TOWER_H,
+        vx: 0.3 + Math.random() * 0.8,
+        vy: 0.6 + Math.random() * 0.9,
+        size: 5 + Math.random() * 5,
+        phase: Math.random() * Math.PI * 2,
+        color: Math.random() > 0.4 ? '#c8281c' : '#d85820'
+      });
+    }
+
+    // Clouds & Smoke in Arena
+    const arenaClouds = [];
+    for (let i = 0; i < 6; i++) {
+      arenaClouds.push({
+        x: Math.random() * W,
+        y: Math.random() * (H * 0.15),
+        speed: 0.15 + Math.random() * 0.3,
+        scale: 0.8 + Math.random() * 0.4,
+        variant: i % 2
+      });
+    }
+
+    function spawnSparks(x, y, count = 15, isGolden = false) {
+      for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const spd = 2.0 + Math.random() * 8.0;
+        sparks.push({
+          x: x,
+          y: y,
+          vx: Math.cos(angle) * spd,
+          vy: Math.sin(angle) * spd,
+          life: 18 + Math.floor(Math.random() * 16),
+          size: isGolden ? (2 + Math.random() * 3) : (1.5 + Math.random() * 2),
+          color: isGolden ? (Math.random() > 0.5 ? '#ffd770' : '#ff9d30') : (Math.random() > 0.5 ? '#ff3b30' : '#ffffff')
+        });
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // Input Controller
+    // -------------------------------------------------------------------------
+    const keys = {};
+    const mouse = { x: 0, y: 0, clicked: false, rightClicked: false };
+
+    window.addEventListener('keydown', (e) => {
+      audio.init();
+      audio.startBGM();
+      keys[e.code] = true;
+
+      // Handle Testing key [T]
+      if (e.code === 'KeyT' && gameState === 'PLAYING') {
+        if (['enrage_intro', 'ascend', 'airborne', 'descend'].includes(boss.state)) {
+          audio.playSFX('block_wood', 0.8);
+        } else {
+          boss.hp = Math.max(0, boss.hp - 200);
+          boss.posture = Math.min(boss.max_posture, boss.posture + 25.0);
+          audio.playSFX('slash_hit', 0.9);
+          spawnSparks(boss.x, boss.y - boss_h * 0.5, 20, false);
+        }
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      keys[e.code] = false;
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = W / rect.width;
+      const scaleY = H / rect.height;
+      mouse.x = (e.clientX - rect.x) * scaleX;
+      mouse.y = (e.clientY - rect.y) * scaleY;
+    });
+
+    canvas.addEventListener('mousedown', (e) => {
+      audio.init();
+      audio.startBGM();
+      if (e.button === 0) mouse.clicked = true;
+      if (e.button === 2) mouse.rightClicked = true;
+    });
+
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    // UI Buttons
+    document.getElementById('btn-audio').addEventListener('click', () => {
+      const active = audio.toggleMute();
+      document.getElementById('btn-audio').textContent = active ? '🔊 AUDIO: ON' : '🔇 AUDIO: MUTED';
+    });
+
+    document.getElementById('btn-fullscreen').addEventListener('click', () => {
+      const container = document.getElementById('game-container');
+      if (!document.fullscreenElement) {
+        container.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    });
+
+    // -------------------------------------------------------------------------
+    // Initialization Routines
+    // -------------------------------------------------------------------------
+    function initTowerLevel() {
+      towerCameraY = TOWER_H - H;
+      towerIntroDismissed = false;
+      towerDoorMsg = '';
+      towerDoorTimer = 0;
+      towerDamageCooldown = 0;
+      projectiles.length = 0;
+      sparks.length = 0;
+
+      const effective_max_hp = 100 + playerHpBuff;
+      player.max_hp = effective_max_hp;
+      player.hp = effective_max_hp;
+      player.displayed_hp = effective_max_hp;
+      player.x = Math.floor(W * 0.20);
+      player.y = TOWER_H - 80;
+      player.vy = 0.0;
+      player.on_ground = true;
+      player.jumps_left = 2; // Double jump enabled in tower!
+      player.jump_key_prev = false;
+      player.facing_right = true;
+      player.state = 'idle';
+      player.frame_idx = 0;
+      player.anim_time = 0.0;
+      player.tick_count = 0;
+      player.kunai_count = player.kunai_max;
+      player.kunai_recharge_timer = 0;
+      player.heal_used = false;
+
+      initTowerMinions();
+      audio.setBGMMode('normal');
+    }
+
+    function initArenaRound() {
+      const effective_max_hp = 100 + playerHpBuff;
+      player.max_hp = effective_max_hp;
+      player.hp = effective_max_hp;
+      player.displayed_hp = effective_max_hp;
+      player.posture = 0.0;
+      player.posture_decay_delay = 0;
+      player.x = Math.floor(W * 0.22);
+      player.y = GROUND_Y;
+      player.vy = 0.0;
+      player.facing_right = true;
+      player.on_ground = true;
+      player.jumps_left = 0; // Disabled during boss fight!
+      player.jump_key_prev = false;
+      player.state = 'idle';
+      player.frame_idx = 0;
+      player.anim_time = 0.0;
+      player.tick_count = 0;
+      player.kunai_count = player.kunai_max;
+      player.kunai_recharge_timer = 0;
+      player.heal_used = false;
+
+      boss.hp = boss.max_hp;
+      boss.displayed_hp = boss.max_hp;
+      boss.posture = 0.0;
+      boss.posture_decay_delay = 0;
+      boss.is_stunned = false;
+      boss.stun_timer = 0;
+      boss.x = Math.floor(W * 0.75);
+      boss.y = GROUND_Y;
+      boss.vx = 0.0;
+      boss.facing_right = false;
+      boss.state = 'idle';
+      boss.frame_idx = 0;
+      boss.anim_time = 0.0;
+      boss.tick_count = 0;
+      boss.action_timer = 1.0;
+
+      bossPhase = 1;
+      isEnraged = false;
+      enrageIntroPlayed = false;
+      projectiles.length = 0;
+      sparks.length = 0;
+      audio.setBGMMode('normal');
+    }
+
+    function resetFullMatch() {
+      currentRound = 1;
+      playerRoundWins = 0;
+      magistrateRoundWins = 0;
+      playerHpBuff = 0;
+      playerSpeedBuff = false;
+      initArenaRound();
+    }
+
+    // -------------------------------------------------------------------------
+    // Main Game Loop Update Logic
+    // -------------------------------------------------------------------------
+    let frameCount = 0;
+
+    function update() {
+      frameCount++;
+
+      if (groundShakeTimer > 0) {
+        groundShakeTimer--;
+      }
+
+      if (gameState === 'TOWER') {
+        updateTower();
+      } else if (gameState === 'PLAYING') {
+        updateBossFight();
+      } else if (gameState === 'ROUND_OVER') {
+        updateRoundOver();
+      }
+
+      // Reset edge mouse click flags
+      mouse.clicked = false;
+      mouse.rightClicked = false;
+    }
+
+    // --- TOWER LOGIC ---
+    function updateTower() {
+      if (towerDoorTimer > 0) towerDoorTimer--;
+      if (towerDamageCooldown > 0) towerDamageCooldown--;
+
+      // Intro modal dismissal
+      if (!towerIntroDismissed) {
+        if (keys['Space'] || keys['Enter'] || mouse.clicked) {
+          towerIntroDismissed = true;
+          audio.playSFX('slash_hit', 0.7);
+        }
+        return;
+      }
+
+      const player_hit_speed_mult = playerSpeedBuff ? 1.45 : 1.20;
+      const player_move_speed = playerSpeedBuff ? (BASE_MOVE_SPEED * 1.25) : BASE_MOVE_SPEED;
+
+      // Kunai recharge
+      if (player.kunai_count < player.kunai_max) {
+        player.kunai_recharge_timer++;
+        if (player.kunai_recharge_timer >= 240) {
+          player.kunai_count++;
+          player.kunai_recharge_timer = 0;
+        }
+      }
+
+      // Action States
+      if (['dodge', 'slash', 'kunai'].includes(player.state)) {
+        player.tick_count++;
+        if (player.state === 'dodge') {
+          const dvx = (player.facing_right ? 1 : -1) * (player_move_speed * 1.6);
+          player.x += dvx;
+          player.frame_idx++;
+          if (player.frame_idx >= 30) {
+            player.state = 'idle';
+            player.frame_idx = 0;
+          }
+        } else if (player.state === 'slash') {
+          const prev_idx = player.frame_idx;
+          player.anim_time += player_hit_speed_mult;
+          player.frame_idx = Math.floor(player.anim_time);
+          if (prev_idx < 14 && player.frame_idx >= 14) {
+            audio.playSFX('slash_hit', 0.8);
+            // Slay 1-shot sentinels
+            for (const m of towerMinions) {
+              if (m.alive && Math.abs(player.x - m.x) < 70 && Math.abs(player.y - m.y) < 50) {
+                const facing = (m.x > player.x && player.facing_right) || (m.x < player.x && !player.facing_right);
+                if (facing) {
+                  m.alive = false;
+                  audio.playSFX('slash_hit', 1.0);
+                  spawnSparks(m.x, m.y - 30, 20, false);
+                }
+              }
+            }
+          }
+          if (player.frame_idx >= 30) {
+            player.state = 'idle';
+            player.frame_idx = 0;
+            player.anim_time = 0.0;
+          }
+        } else if (player.state === 'kunai') {
+          const prev_idx = player.frame_idx;
+          player.anim_time += player_hit_speed_mult;
+          player.frame_idx = Math.floor(player.anim_time);
+          if (prev_idx < 15 && player.frame_idx >= 15 && !player.kunai_spawned) {
+            player.kunai_spawned = true;
+            const cur_spd = playerSpeedBuff ? (BASE_KUNAI_SPEED * 1.25) : BASE_KUNAI_SPEED;
+            projectiles.push({
+              x: player.x + (player.facing_right ? 25 : -25),
+              y: player.y - 35,
+              vx: player.facing_right ? cur_spd : -cur_spd,
+              type: 'kunai',
+              owner: 'player',
+              active: true
+            });
+            audio.playSFX('kunai_throw', 0.7);
+          }
+          if (player.frame_idx >= 30) {
+            player.state = 'idle';
+            player.frame_idx = 0;
+            player.anim_time = 0.0;
+            player.kunai_spawned = false;
+          }
+        }
+      } else {
+        // Inputs
+        if (keys['ShiftLeft']) {
+          player.state = 'dodge';
+          player.frame_idx = 0;
+          player.tick_count = 0;
+        } else if (keys['ShiftRight']) {
+          player.state = 'slash';
+          player.frame_idx = 0;
+          player.anim_time = 0.0;
+          player.tick_count = 0;
+        } else if (keys['KeyQ'] && player.kunai_count > 0) {
+          player.kunai_count--;
+          player.state = 'kunai';
+          player.frame_idx = 0;
+          player.anim_time = 0.0;
+          player.tick_count = 0;
+          player.kunai_spawned = false;
+        } else {
+          let dx = 0;
+          if (keys['KeyA']) { dx -= player_move_speed; player.facing_right = false; }
+          if (keys['KeyD']) { dx += player_move_speed; player.facing_right = true; }
+
+          if (dx !== 0) {
+            player.state = 'walk';
+            player.x += dx;
+            player.frame_idx = (player.frame_idx + 1) % 30;
+          } else {
+            player.state = 'idle';
+            player.blink_timer--;
+            if (player.blink_timer <= 0) {
+              player.is_blinking = !player.is_blinking;
+              player.blink_timer = player.is_blinking ? 6 : (120 + Math.random() * 80);
+            }
+          }
+        }
+
+        // Edge-Triggered Double Jump
+        const jump_key_down = keys['KeyW'] || keys['ArrowUp'];
+        const jump_just_pressed = jump_key_down && !player.jump_key_prev;
+        player.jump_key_prev = jump_key_down;
+
+        if (jump_just_pressed) {
+          if (player.on_ground) {
+            player.vy = JUMP_FORCE;
+            player.on_ground = false;
+            player.jumps_left = 1;
+            audio.playSFX('kunai_throw', 0.4);
+          } else if (player.jumps_left > 0) {
+            player.vy = JUMP_FORCE * 0.95;
+            player.jumps_left = 0;
+            audio.playSFX('heal_spell', 0.6);
+            spawnSparks(player.x, player.y - 10, 16, true);
+          }
+        }
+
+        // Drop down through platforms
+        if ((keys['KeyS'] || keys['ArrowDown']) && player.on_ground && player.y < TOWER_H - 120) {
+          player.y += 8;
+          player.on_ground = false;
+          player.vy = 2.0;
+        }
+      }
+
+      // Gravity & Platform Collision
+      const prev_y = player.y;
+      if (!player.on_ground) {
+        player.vy += GRAVITY;
+        player.y += player.vy;
+      }
+
+      player.on_ground = false;
+      if (player.vy >= 0) {
+        for (const plat of towerPlatforms) {
+          const r = plat.rect;
+          if (player.x >= r.x - 20 && player.x <= r.x + r.w + 20) {
+            if (prev_y <= r.y + 6 && player.y >= r.y - 6) {
+              player.y = r.y;
+              player.vy = 0.0;
+              player.on_ground = true;
+              player.jumps_left = 2; // Reset double jump
+              break;
+            }
+          }
+        }
+      }
+
+      if (player.y >= TOWER_H - 80) {
+        player.y = TOWER_H - 80;
+        player.vy = 0.0;
+        player.on_ground = true;
+        player.jumps_left = 2;
+      }
+
+      player.x = Math.max(tower_center_offset + 25, Math.min(W - tower_center_offset - 25, player.x));
+
+      // Minion Patrol & Collisions
+      for (const m of towerMinions) {
+        if (m.alive) {
+          m.x += m.vx;
+          if (m.x <= m.min_x) { m.x = m.min_x; m.vx = Math.abs(m.vx); m.facing_right = true; }
+          else if (m.x >= m.max_x) { m.x = m.max_x; m.vx = -Math.abs(m.vx); m.facing_right = false; }
+
+          if (Math.abs(player.x - m.x) < 26 && Math.abs(player.y - m.y) < 40) {
+            if (player.state !== 'dodge' && towerDamageCooldown <= 0) {
+              towerDamageCooldown = 45;
+              player.hp = Math.max(0, player.hp - 15);
+              audio.playSFX('slash_hit', 0.7);
+              spawnSparks(player.x, player.y - tower_player_h * 0.5, 12, false);
+              if (player.hp <= 0) {
+                // Respawn at tower base
+                player.hp = player.max_hp;
+                player.x = Math.floor(W * 0.20);
+                player.y = TOWER_H - 80;
+                player.vy = 0.0;
+                player.jumps_left = 2;
+                towerDoorMsg = '★ DEFEATED BY SENTINELS — RESPAWNED AT TOWER BASE ★';
+                towerDoorTimer = 180;
+              }
+            }
+          }
+        }
+      }
+
+      // Projectiles
+      for (let i = projectiles.length - 1; i >= 0; i--) {
+        const p = projectiles[i];
+        p.x += p.vx;
+        if (p.x < -100 || p.x > W + 100) p.active = false;
+        if (p.active && p.owner === 'player') {
+          for (const m of towerMinions) {
+            if (m.alive && Math.abs(p.x - m.x) < 32 && Math.abs(p.y - (m.y - 30)) < 40) {
+              m.alive = false;
+              p.active = false;
+              audio.playSFX('slash_hit', 0.9);
+              spawnSparks(m.x, m.y - 35, 18, false);
+              break;
+            }
+          }
+        }
+        if (!p.active) projectiles.splice(i, 1);
+      }
+
+      // Summit Gate Transition: Unseal gate directly
+      const gate_cx = towerGate.x + towerGate.w / 2;
+      const gate_bot = towerGate.y + towerGate.h;
+      if (Math.abs(player.x - gate_cx) < Math.floor(W * 0.16) && player.y <= gate_bot + 20) {
+        towerDoorMsg = '★ PRESS [W] OR [ENTER] TO UNSEAL GATE & FACE THE HOLLOW MAGISTRATE ★';
+        towerDoorTimer = 15;
+        if (keys['KeyW'] || keys['Enter'] || keys['ArrowUp']) {
+          audio.playSFX('posture_break', 1.0);
+          spawnSparks(gate_cx, towerGate.y + 60, 45, true);
+          resetFullMatch();
+          gameState = 'PLAYING';
+        }
+      }
+
+      // Smooth camera follow
+      const targetCamY = player.y - H * 0.62;
+      towerCameraY += (targetCamY - towerCameraY) * 0.12;
+      towerCameraY = Math.max(0.0, Math.min(TOWER_H - H, towerCameraY));
+    }
+
+    // --- BOSS FIGHT LOGIC ---
+    function updateBossFight() {
+      // Health Lag Easing
+      player.displayed_hp += (player.hp - player.displayed_hp) * 0.12;
+      boss.displayed_hp += (boss.hp - boss.displayed_hp) * 0.12;
+
+      // Phase calculation
+      isEnraged = (boss.hp <= boss.max_hp * 0.33);
+      if (isEnraged) bossPhase = 3;
+      else if (boss.hp <= boss.max_hp * 0.66) bossPhase = 2;
+      else bossPhase = 1;
+
+      if (isEnraged && !enrageIntroPlayed && boss.state !== 'ascend' && boss.state !== 'airborne' && boss.state !== 'descend') {
+        boss.state = 'enrage_intro';
+        boss.frame_idx = 0;
+        boss.anim_time = 0.0;
+        boss.tick_count = 0;
+        enrageIntroPlayed = true;
+        audio.setBGMMode('enraged');
+        audio.playSFX('posture_break', 1.0);
+        groundShakeTimer = 90;
+        groundShakeIntensity = 18.0;
+      }
+
+      // Posture Decay
+      if (boss.posture_decay_delay > 0) boss.posture_decay_delay--;
+      else if (boss.posture > 0 && !boss.is_stunned) boss.posture = Math.max(0.0, boss.posture - 0.08);
+
+      if (boss.posture >= boss.max_posture && !boss.is_stunned) {
+        boss.is_stunned = true;
+        boss.stun_timer = 180;
+        boss.state = 'stunned';
+        boss.posture = 100.0;
+        audio.playSFX('posture_break', 1.0);
+        spawnSparks(boss.x, boss.y - boss_h * 0.5, 30, true);
+      }
+
+      if (boss.is_stunned) {
+        boss.stun_timer--;
+        if (boss.stun_timer <= 0) {
+          boss.is_stunned = false;
+          boss.posture = 0.0;
+          boss.state = 'idle';
+        }
+      }
+
+      const player_hit_speed_mult = playerSpeedBuff ? 1.45 : 1.20;
+      const player_move_speed = playerSpeedBuff ? (BASE_MOVE_SPEED * 1.25) : BASE_MOVE_SPEED;
+
+      // Kunai recharge
+      if (player.kunai_count < player.kunai_max) {
+        player.kunai_recharge_timer++;
+        if (player.kunai_recharge_timer >= 240) {
+          player.kunai_count++;
+          player.kunai_recharge_timer = 0;
+        }
+      }
+
+      // Player Action States
+      if (['dodge', 'slash', 'kunai', 'heal'].includes(player.state)) {
+        player.tick_count++;
+        if (player.state === 'dodge') {
+          const dvx = (player.facing_right ? 1 : -1) * (player_move_speed * 1.6);
+          player.x = Math.max(center_offset + 30, Math.min(W - center_offset - 30, player.x + dvx));
+          player.frame_idx++;
+          if (player.frame_idx >= 30) { player.state = 'idle'; player.frame_idx = 0; }
+        } else if (player.state === 'slash') {
+          const prev_idx = player.frame_idx;
+          player.anim_time += player_hit_speed_mult;
+          player.frame_idx = Math.floor(player.anim_time);
+
+          if (prev_idx < 14 && player.frame_idx >= 14) {
+            audio.playSFX('slash_hit', 0.8);
+            const dist = Math.abs(player.x - boss.x);
+            const facing_boss = (player.x < boss.x && player.facing_right) || (player.x > boss.x && !player.facing_right);
+            if (dist < Math.floor(W * 0.16) && facing_boss) {
+              // Boss Invulnerability Check
+              if (['enrage_intro', 'ascend', 'airborne', 'descend'].includes(boss.state)) {
+                audio.playSFX('block_wood', 0.7);
+                spawnSparks(boss.x, boss.y - boss_h * 0.5, 6, false);
+              } else if (boss.is_stunned) {
+                // Critical Strike!
+                boss.hp = Math.max(0, boss.hp - 250);
+                audio.playSFX('slash_hit', 1.0);
+                spawnSparks(boss.x, boss.y - boss_h * 0.5, 30, true);
+              } else {
+                boss.hp = Math.max(0, boss.hp - 35);
+                boss.posture = Math.min(boss.max_posture, boss.posture + 12.0);
+                boss.posture_decay_delay = 120;
+                audio.playSFX('slash_hit', 0.9);
+                spawnSparks(boss.x, boss.y - boss_h * 0.5, 14, false);
+              }
+            }
+          }
+          if (player.frame_idx >= 30) {
+            player.state = 'idle';
+            player.frame_idx = 0;
+            player.anim_time = 0.0;
+          }
+        } else if (player.state === 'kunai') {
+          const prev_idx = player.frame_idx;
+          player.anim_time += player_hit_speed_mult;
+          player.frame_idx = Math.floor(player.anim_time);
+          if (prev_idx < 15 && player.frame_idx >= 15 && !player.kunai_spawned) {
+            player.kunai_spawned = true;
+            const cur_spd = playerSpeedBuff ? (BASE_KUNAI_SPEED * 1.25) : BASE_KUNAI_SPEED;
+            projectiles.push({
+              x: player.x + (player.facing_right ? 35 : -35),
+              y: player.y - Math.floor(player_h * 0.45),
+              vx: player.facing_right ? cur_spd : -cur_spd,
+              type: 'kunai',
+              owner: 'player',
+              damage: 50,
+              active: true
+            });
+            audio.playSFX('kunai_throw', 0.7);
+          }
+          if (player.frame_idx >= 30) {
+            player.state = 'idle';
+            player.frame_idx = 0;
+            player.anim_time = 0.0;
+            player.kunai_spawned = false;
+          }
+        } else if (player.state === 'heal') {
+          player.heal_timer--;
+          player.frame_idx = Math.min(29, Math.floor((30 - player.heal_timer) / 30.0 * 30));
+          if (player.heal_timer <= 0) {
+            player.hp = Math.min(player.max_hp, player.hp + Math.floor(player.max_hp * 0.50));
+            player.state = 'idle';
+            player.frame_idx = 0;
+          }
+        }
+      } else {
+        // Parry / Block (Right Click or Holding Space)
+        if (mouse.rightClicked) {
+          player.state = 'parry';
+          player.frame_idx = 0;
+        } else if (keys['ShiftLeft']) {
+          player.state = 'dodge';
+          player.frame_idx = 0;
+          player.tick_count = 0;
+        } else if (keys['ShiftRight']) {
+          player.state = 'slash';
+          player.frame_idx = 0;
+          player.anim_time = 0.0;
+          player.tick_count = 0;
+        } else if (keys['KeyQ'] && player.kunai_count > 0) {
+          player.kunai_count--;
+          player.state = 'kunai';
+          player.frame_idx = 0;
+          player.anim_time = 0.0;
+          player.tick_count = 0;
+          player.kunai_spawned = false;
+        } else if (keys['KeyE'] && !player.heal_used && player.hp < player.max_hp) {
+          player.heal_used = true;
+          player.heal_timer = 30;
+          player.state = 'heal';
+          player.frame_idx = 0;
+          audio.playSFX('heal_spell', 0.8);
+          spawnSparks(player.x, player.y - player_h * 0.5, 20, true);
+        } else {
+          let dx = 0;
+          if (keys['KeyA']) { dx -= player_move_speed; player.facing_right = false; }
+          if (keys['KeyD']) { dx += player_move_speed; player.facing_right = true; }
+
+          if (dx !== 0) {
+            player.state = 'walk';
+            player.x += dx;
+            player.frame_idx = (player.frame_idx + 1) % 30;
+          } else {
+            player.state = 'idle';
+          }
+        }
+
+        // Single jump only in arena
+        if (keys['KeyW'] && player.on_ground) {
+          player.vy = JUMP_FORCE;
+          player.on_ground = false;
+        }
+      }
+
+      if (player.state === 'parry') {
+        player.frame_idx++;
+        if (player.frame_idx >= 30) {
+          player.state = 'idle';
+          player.frame_idx = 0;
+        }
+      }
+
+      // Arena Player Gravity
+      if (!player.on_ground) {
+        player.vy += GRAVITY;
+        player.y += player.vy;
+      }
+      if (player.y >= GROUND_Y) {
+        player.y = GROUND_Y;
+        player.vy = 0.0;
+        player.on_ground = true;
+      }
+      player.x = Math.max(center_offset + 30, Math.min(W - center_offset - 30, player.x));
+
+      // --- BOSS AI & ATTACK CYCLES ---
+      if (boss.state === 'enrage_intro') {
+        boss.vx = 0.0;
+        boss.frame_idx++;
+        if (boss.frame_idx >= 150) {
+          boss.state = 'idle';
+          boss.frame_idx = 0;
+          boss.action_timer = 0.5;
+        }
+      } else if (boss.state === 'smash') {
+        boss.frame_idx++;
+        // Hitbox active around frame 18
+        if (boss.frame_idx === 18 && !boss.smash_hit) {
+          boss.smash_hit = true;
+          groundShakeTimer = 60;
+          groundShakeIntensity = 12.0;
+          audio.playSFX('slash_hit', 1.0);
+          spawnSparks(boss.x + (boss.facing_right ? 60 : -60), GROUND_Y, 20, false);
+
+          const dist = Math.abs(boss.x - player.x);
+          if (dist < Math.floor(W * 0.16)) {
+            if (player.state === 'dodge') {
+              // Dodged clean
+            } else if (player.state === 'parry' && player.frame_idx <= 14) {
+              // Perfect parry!
+              audio.playSFX('parry_metal', 1.0);
+              boss.posture = Math.min(boss.max_posture, boss.posture + 30.0);
+              spawnSparks(player.x, player.y - player_h * 0.5, 25, true);
+            } else if (player.state === 'parry') {
+              // Block (60% reduction)
+              audio.playSFX('block_wood', 0.9);
+              const dmg = Math.floor((bossPhase === 3 ? 34 : (bossPhase === 2 ? 28 : 22)) * 0.40);
+              player.hp = Math.max(0, player.hp - dmg);
+            } else {
+              // Direct hit (20% reduced damage)
+              const dmg = (bossPhase === 3 ? 34 : (bossPhase === 2 ? 28 : 22));
+              player.hp = Math.max(0, player.hp - dmg);
+            }
+          }
+        }
+        if (boss.frame_idx >= 30) {
+          boss.state = 'idle';
+          boss.frame_idx = 0;
+          boss.action_timer = 1.0;
+        }
+      } else if (['spear', 'kunai'].includes(boss.state)) {
+        boss.frame_idx++;
+        if (boss.frame_idx === 16 && !boss.projectile_spawned) {
+          boss.projectile_spawned = true;
+          const spd = (bossPhase === 3 ? 24 : 18) * (boss.facing_right ? 1 : -1);
+          projectiles.push({
+            x: boss.x + (boss.facing_right ? 50 : -50),
+            y: boss.y - Math.floor(boss_h * 0.45),
+            vx: spd,
+            type: 'spear',
+            owner: 'boss',
+            damage: Math.floor((bossPhase === 3 ? 22 : (bossPhase === 2 ? 18 : 15))),
+            active: true
+          });
+          audio.playSFX('kunai_throw', 0.8);
+        }
+        if (boss.frame_idx >= 30) {
+          boss.state = 'idle';
+          boss.frame_idx = 0;
+          boss.action_timer = 1.2;
+        }
+      } else if (boss.state === 'ascend') {
+        // 1.5x speed ascent (40 ticks = ~0.67s) - INVULNERABLE
+        boss.slam_timer--;
+        const progress = (40 - boss.slam_timer) / 40.0;
+        boss.frame_idx = Math.min(29, Math.floor(progress * 30));
+        if (progress > 0.35) {
+          boss.y = GROUND_Y - Math.floor(((progress - 0.35) / 0.65) * (H * 0.85));
+        }
+        if (boss.slam_timer <= 0) {
+          boss.state = 'airborne';
+          boss.slam_timer = 60; // 1.0s in air
+          boss.y = -400;
+          const offset = (Math.random() > 0.5 ? 1 : -1) * (50 + Math.floor(Math.random() * (W * 0.16)));
+          boss.slam_target_x = Math.max(Math.floor(W * 0.16), Math.min(Math.floor(W * 0.84), player.x + offset));
+        }
+      } else if (boss.state === 'airborne') {
+        boss.slam_timer--;
+        boss.y = -400;
+        if (boss.slam_timer <= 0) {
+          boss.state = 'descend';
+          boss.slam_timer = 40; // 1.5x speed descent
+          boss.frame_idx = 0;
+          boss.x = boss.slam_target_x;
+          boss.y = GROUND_Y;
+          boss.slam_hit = false;
+          boss.facing_right = (player.x > boss.x);
+        }
+      } else if (boss.state === 'descend') {
+        // 1.5x speed descent (40 ticks = ~0.67s) - INVULNERABLE
+        boss.slam_timer--;
+        const progress = (40 - boss.slam_timer) / 40.0;
+        boss.frame_idx = Math.min(29, Math.floor(progress * 30));
+
+        if (progress >= 0.58 && !boss.slam_hit) {
+          boss.slam_hit = true;
+          groundShakeTimer = 90;
+          groundShakeIntensity = 22.0;
+          audio.playSFX('ground_slam', 1.0);
+          spawnSparks(boss.x, GROUND_Y, 35, true);
+
+          // AOE crash damage
+          const dist = Math.abs(boss.x - player.x);
+          if (dist < Math.floor(W * 0.22)) {
+            if (player.state === 'dodge') {
+              // Dodged
+            } else if (player.state === 'parry' && player.frame_idx <= 14) {
+              audio.playSFX('parry_metal', 1.0);
+              boss.posture = Math.min(boss.max_posture, boss.posture + 30.0);
+              spawnSparks(player.x, player.y - player_h * 0.5, 30, true);
+            } else if (player.state === 'parry') {
+              audio.playSFX('block_wood', 0.9);
+              const slam_dmg = (bossPhase === 3 ? 45 : (bossPhase === 2 ? 36 : 28));
+              player.hp = Math.max(0, player.hp - Math.floor(slam_dmg * 0.40));
+            } else {
+              const slam_dmg = (bossPhase === 3 ? 45 : (bossPhase === 2 ? 36 : 28));
+              player.hp = Math.max(0, player.hp - slam_dmg);
+            }
+          }
+        }
+        if (boss.slam_timer <= 0) {
+          boss.state = 'idle';
+          boss.frame_idx = 0;
+          boss.action_timer = 1.0;
+        }
+      } else if (!boss.is_stunned) {
+        // Idle / Patrol decision cycle
+        boss.action_timer -= 1.0 / 60.0;
+        boss.facing_right = (player.x > boss.x);
+
+        if (boss.action_timer <= 0) {
+          const dist = Math.abs(boss.x - player.x);
+          const is_far = dist > Math.floor(W * 0.22);
+
+          if (is_far) {
+            // At range: Spear throw (65%) or Sky Leap Ascent (35%)
+            if (Math.random() < 0.35) {
+              boss.state = 'ascend';
+              boss.slam_timer = 40;
+              boss.frame_idx = 0;
+            } else {
+              boss.state = 'spear';
+              boss.frame_idx = 0;
+              boss.projectile_spawned = false;
+            }
+          } else {
+            // In melee: Smash (45%), Kunai (25%), Sky Leap (30%)
+            const r = Math.random();
+            if (r < 0.30) {
+              boss.state = 'ascend';
+              boss.slam_timer = 40;
+              boss.frame_idx = 0;
+            } else if (r < 0.75) {
+              boss.state = 'smash';
+              boss.frame_idx = 0;
+              boss.smash_hit = false;
+            } else {
+              boss.state = 'kunai';
+              boss.frame_idx = 0;
+              boss.projectile_spawned = false;
+            }
+          }
+        } else {
+          // Patrol movement towards player
+          const dist = Math.abs(boss.x - player.x);
+          if (dist > Math.floor(W * 0.18)) {
+            boss.state = 'walk';
+            boss.frame_idx = (boss.frame_idx + 1) % 30;
+            boss.x += (player.x > boss.x ? 1 : -1) * 2.2;
+          } else {
+            boss.state = 'idle';
+          }
+        }
+      }
+
+      // Update Projectiles in Arena
+      for (let i = projectiles.length - 1; i >= 0; i--) {
+        const p = projectiles[i];
+        p.x += p.vx;
+        if (p.x < -100 || p.x > W + 100) p.active = false;
+
+        if (p.active) {
+          if (p.owner === 'player') {
+            const dist = Math.abs(p.x - boss.x);
+            if (dist < 45 && Math.abs(p.y - (boss.y - boss_h * 0.5)) < Math.floor(boss_h * 0.4)) {
+              p.active = false;
+              if (['enrage_intro', 'ascend', 'airborne', 'descend'].includes(boss.state)) {
+                audio.playSFX('block_wood', 0.6);
+                spawnSparks(p.x, p.y, 6, false);
+              } else {
+                boss.hp = Math.max(0, boss.hp - p.damage);
+                boss.posture = Math.min(boss.max_posture, boss.posture + 5.0);
+                audio.playSFX('slash_hit', 0.8);
+                spawnSparks(p.x, p.y, 14, false);
+              }
+            }
+          } else if (p.owner === 'boss') {
+            const dist = Math.abs(p.x - player.x);
+            if (dist < 35 && Math.abs(p.y - (player.y - player_h * 0.5)) < Math.floor(player_h * 0.4)) {
+              p.active = false;
+              if (player.state === 'dodge') {
+                // Dodged
+              } else if (player.state === 'parry' && player.frame_idx <= 14) {
+                audio.playSFX('parry_metal', 1.0);
+                boss.posture = Math.min(boss.max_posture, boss.posture + 15.0);
+                spawnSparks(player.x, player.y - player_h * 0.5, 20, true);
+              } else if (player.state === 'parry') {
+                audio.playSFX('block_wood', 0.8);
+                player.hp = Math.max(0, player.hp - Math.floor(p.damage * 0.40));
+              } else {
+                audio.playSFX('slash_hit', 0.9);
+                player.hp = Math.max(0, player.hp - p.damage);
+              }
+            }
+          }
+        }
+
+        if (!p.active) projectiles.splice(i, 1);
+      }
+
+      // Check Round Victory / Defeat Conditions
+      if (player.hp <= 0) {
+        magistrateRoundWins++;
+        if (magistrateRoundWins >= 3) {
+          isMatchDefeat = true;
+          roundOverMsg = 'THE HOLLOW MAGISTRATE WINS THE MATCH';
+          roundOverSub = 'Three rounds claimed. The Ashen Curse consumes the summit.';
+          gameState = 'MATCH_OVER';
+        } else {
+          isMatchDefeat = false;
+          if (magistrateRoundWins === 1) {
+            playerHpBuff = 30; // 1st loss buff
+            roundOverMsg = 'BOUNCE BACK';
+            roundOverSub = `General Zhao fell in Round ${currentRound}! Gained +30 Max HP Buff for next round!`;
+          } else if (magistrateRoundWins === 2) {
+            playerSpeedBuff = true; // 2nd loss buff
+            roundOverMsg = 'FINAL BOUNCE BACK';
+            roundOverSub = `On the brink! Gained +25% Movement & Attack Speed Buffs!`;
+          }
+          gameState = 'ROUND_OVER';
+        }
+        audio.playSFX('posture_break', 1.0);
+      } else if (boss.hp <= 0) {
+        playerRoundWins++;
+        if (playerRoundWins >= 3) {
+          isMatchVictory = true;
+          roundOverMsg = 'GENERAL ZHAO CLAIMS ULTIMATE VICTORY';
+          roundOverSub = 'The Hollow Magistrate is purified. The Pagoda of the Ashen Peak is freed!';
+          gameState = 'MATCH_OVER';
+        } else {
+          roundOverMsg = 'ROUND VICTORIOUS!';
+          roundOverSub = `The Magistrate retreats to gather dark chakra. The next round is starting!`;
+          gameState = 'ROUND_OVER';
+        }
+        audio.playSFX('heal_spell', 1.0);
+      }
+    }
+
+    function updateRoundOver() {
+      // In round-over state, modal handles button clicks to restart or continue
+    }
+
+    // -------------------------------------------------------------------------
+    // Main Game Rendering Routines
+    // -------------------------------------------------------------------------
+    function render() {
+      ctx.clearRect(0, 0, W, H);
+
+      let shakeX = 0;
+      let shakeY = 0;
+      if (groundShakeTimer > 0) {
+        const factor = (groundShakeTimer / 90.0) * groundShakeIntensity;
+        shakeX = Math.floor((Math.random() - 0.5) * factor);
+        shakeY = Math.floor((Math.random() - 0.5) * factor);
+      }
+
+      ctx.save();
+      ctx.translate(shakeX, shakeY);
+
+      if (gameState === 'TOWER') {
+        renderTower();
+      } else {
+        renderArena();
+      }
+
+      // Render Projectiles
+      for (const p of projectiles) {
+        if (p.type === 'kunai') {
+          if (images.kunai_item && images.kunai_item.complete) {
+            const kw = (gameState === 'TOWER') ? 22 : 45;
+            const kh = Math.floor(kw * (188 / 948));
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            if (p.vx < 0) ctx.scale(-1, 1);
+            ctx.drawImage(images.kunai_item, -kw / 2, -kh / 2, kw, kh);
+            ctx.restore();
+          } else {
+            ctx.fillStyle = '#f0d080';
+            ctx.fillRect(p.x - 10, p.y - 2, 20, 4);
+          }
+        } else if (p.type === 'spear') {
+          ctx.strokeStyle = '#c82820';
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.moveTo(p.x - 30 * Math.sign(p.vx), p.y);
+          ctx.lineTo(p.x + 30 * Math.sign(p.vx), p.y);
+          ctx.stroke();
+        }
+      }
+
+      // Render Sparks
+      for (let i = sparks.length - 1; i >= 0; i--) {
+        const spk = sparks[i];
+        spk.x += spk.vx;
+        spk.y += spk.vy;
+        spk.vy += 0.28;
+        spk.life--;
+        ctx.fillStyle = spk.color;
+        ctx.beginPath();
+        ctx.arc(spk.x, spk.y, spk.size, 0, Math.PI * 2);
+        ctx.fill();
+        if (spk.life <= 0) sparks.splice(i, 1);
+      }
+
+      ctx.restore();
+
+      // UI Overlays
+      if (gameState === 'TOWER') {
+        renderTowerHUD();
+        if (!towerIntroDismissed) renderTowerIntroModal();
+      } else if (gameState === 'PLAYING') {
+        renderArenaHUD();
+      } else if (gameState === 'ROUND_OVER' || gameState === 'MATCH_OVER') {
+        renderRoundOverModal();
+      }
+    }
+
+    // --- TOWER RENDER ---
+    function renderTower() {
+      const camY = Math.floor(towerCameraY);
+
+      // Authentic Pagoda Scrolling Background
+      if (images.tower_bg && images.tower_bg.complete) {
+        ctx.drawImage(images.tower_bg, 0, -camY, W, TOWER_H);
+      } else {
+        // Fallback atmospheric gradient
+        const grad = ctx.createLinearGradient(0, 0, 0, H);
+        grad.addColorStop(0, '#1a1018');
+        grad.addColorStop(1, '#080506');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
+      }
+
+      // Ambient Embers
+      for (const e of ambientEmbers) {
+        e.x += e.vx;
+        e.y += e.vy;
+        if (e.y < 0) { e.y = TOWER_H; e.x = Math.random() * W; }
+        const sy = e.y - camY;
+        if (sy >= -10 && sy <= H + 10) {
+          ctx.fillStyle = `rgba(235, 125, 45, ${e.alpha})`;
+          ctx.beginPath();
+          ctx.arc(e.x, sy, e.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // Momiji Leaves
+      for (const lf of momijiLeaves) {
+        lf.phase += 0.04;
+        lf.x += lf.vx + Math.sin(lf.phase) * 0.5;
+        lf.y += lf.vy;
+        if (lf.y > TOWER_H) { lf.y = 0; lf.x = Math.random() * W; }
+        const sy = lf.y - camY;
+        if (sy >= -20 && sy <= H + 20) {
+          ctx.fillStyle = lf.color;
+          ctx.beginPath();
+          ctx.arc(lf.x, sy, lf.size / 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // Wooden Ladders
+      for (const lad of towerLadders) {
+        const sTop = lad.top - camY;
+        const sBot = lad.bot - camY;
+        if (sBot < -50 || sTop > H + 50) continue;
+        ctx.strokeStyle = '#462c1c';
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(lad.x - 12, sTop); ctx.lineTo(lad.x - 12, sBot); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(lad.x + 12, sTop); ctx.lineTo(lad.x + 12, sBot); ctx.stroke();
+        ctx.strokeStyle = '#875834';
+        ctx.lineWidth = 2;
+        for (let ry = lad.top; ry < lad.bot; ry += 18) {
+          const sRy = ry - camY;
+          if (sRy >= -10 && sRy <= H + 10) {
+            ctx.beginPath(); ctx.moveTo(lad.x - 12, sRy); ctx.lineTo(lad.x + 12, sRy); ctx.stroke();
+          }
+        }
+      }
+
+      // Platforms
+      for (const plat of towerPlatforms) {
+        const r = plat.rect;
+        const sy = r.y - camY;
+        if (sy + r.h < -60 || sy > H + 60) continue;
+
+        if (plat.type === 'ground') {
+          ctx.fillStyle = '#1a1414';
+          ctx.fillRect(r.x, sy, r.w, r.h);
+          ctx.fillStyle = '#82201c';
+          ctx.fillRect(r.x, sy, r.w, 4);
+          ctx.fillStyle = '#d4a34b';
+          ctx.fillRect(r.x, sy + 4, r.w, 1);
+        } else if (plat.type === 'stone') {
+          ctx.fillStyle = '#2d2a30';
+          ctx.fillRect(r.x, sy, r.w, r.h);
+          ctx.fillStyle = '#55505c';
+          ctx.fillRect(r.x, sy, r.w, 2);
+        } else if (plat.type === 'bridge') {
+          ctx.strokeStyle = '#825530';
+          ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.moveTo(r.x, sy - 18); ctx.lineTo(r.x + r.w, sy - 18); ctx.stroke();
+          ctx.fillStyle = '#482d1c';
+          ctx.fillRect(r.x, sy, r.w, r.h);
+          for (let px = r.x; px < r.x + r.w; px += 28) {
+            ctx.strokeStyle = '#644126';
+            ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(px, sy - 18); ctx.lineTo(px, sy); ctx.stroke();
+          }
+        } else if (plat.type === 'torii_terrace') {
+          ctx.fillStyle = '#28242a';
+          ctx.fillRect(r.x, sy, r.w, r.h);
+          ctx.fillStyle = '#a02a26';
+          ctx.fillRect(r.x, sy, r.w, 3);
+          // Torii Gate Arch
+          const tcx = r.x + Math.floor(r.w * 0.38);
+          const th = 110;
+          ctx.fillStyle = '#b32420';
+          ctx.fillRect(tcx - 45, sy - th, 14, th);
+          ctx.fillRect(tcx + 31, sy - th, 14, th);
+          ctx.fillRect(tcx - 60, sy - th - 12, 120, 16);
+          ctx.fillStyle = '#ffd770';
+          ctx.fillRect(tcx - 56, sy - th + 4, 112, 4);
+        } else if (plat.type === 'summit') {
+          ctx.fillStyle = '#1c1822';
+          ctx.fillRect(r.x, sy, r.w, r.h);
+          ctx.fillStyle = '#ffd770';
+          ctx.fillRect(r.x, sy, r.w, 4);
+        } else {
+          ctx.fillStyle = '#3a2b22';
+          ctx.fillRect(r.x, sy, r.w, r.h);
+          ctx.fillStyle = '#825530';
+          ctx.fillRect(r.x, sy, r.w, 2);
+        }
+      }
+
+      // Summit Gate
+      const gateSy = towerGate.y - camY;
+      if (gateSy + towerGate.h > -50 && gateSy < H + 50) {
+        ctx.fillStyle = '#201414';
+        ctx.fillRect(towerGate.x, gateSy, towerGate.w, towerGate.h);
+        ctx.strokeStyle = '#ffd770';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(towerGate.x, gateSy, towerGate.w, towerGate.h);
+        // Feudal crest
+        ctx.fillStyle = '#ffd770';
+        ctx.font = 'bold 24px inherit';
+        ctx.textAlign = 'center';
+        ctx.fillText('門', towerGate.x + towerGate.w / 2, gateSy + towerGate.h / 2 + 8);
+      }
+
+      // Friendly NPC Musashi
+      const npcSy = towerNPC.y - camY;
+      if (npcSy + towerNPC.h > -50 && npcSy < H + 50) {
+        ctx.fillStyle = '#445566';
+        ctx.fillRect(towerNPC.x - 20, npcSy - 70, 40, 70);
+        // Kimono / Straw Hat
+        ctx.fillStyle = '#c8a355';
+        ctx.beginPath();
+        ctx.arc(towerNPC.x, npcSy - 72, 28, Math.PI, 0);
+        ctx.fill();
+        ctx.fillStyle = '#ffd770';
+        ctx.font = 'bold 12px inherit';
+        ctx.textAlign = 'center';
+        ctx.fillText('ELDER MUSASHI', towerNPC.x, npcSy - 84);
+
+        // Hover dialogue detection
+        if (Math.abs(mouse.x - towerNPC.x) < 55 && Math.abs(mouse.y - (npcSy - 40)) < 60) {
+          renderMusashiLoreDialog(towerNPC.x, npcSy - 110);
+        }
+      }
+
+      // 1-Shot Sentinels
+      for (const m of towerMinions) {
+        if (m.alive) {
+          const msy = m.y - camY;
+          if (msy > -50 && msy < H + 50) {
+            ctx.fillStyle = '#8c2420';
+            ctx.fillRect(m.x - 14, msy - 45, 28, 45);
+            // Glowing red eyes
+            ctx.fillStyle = '#ff2211';
+            const eyeX = m.facing_right ? (m.x + 4) : (m.x - 8);
+            ctx.fillRect(eyeX, msy - 38, 4, 3);
+          }
+        }
+      }
+
+      // Scaled-Down Player (70% reduction, 30% scale)
+      const pDrawX = Math.floor(player.x - tower_center_offset);
+      const pDrawY = Math.floor(player.y - tower_feet_offset) - camY;
+
+      let pImg = images.walk;
+      let pRows = 5, pCols = 6;
+      let pW = tower_frame_w, pH = tower_frame_h;
+
+      if (player.state === 'dodge') { pImg = images.dodge; }
+      else if (player.state === 'slash') { pImg = images.slash; }
+      else if (player.state === 'kunai') { pImg = images.player_kunai; pW = tower_pk_w; pH = tower_pk_h; }
+
+      drawGridFrame(pImg, pRows, pCols, player.frame_idx, pDrawX, pDrawY, pW, pH, !player.facing_right);
+    }
+
+    // --- ARENA RENDER ---
+    function renderArena() {
+      // Background
+      if (images.background && images.background.complete) {
+        ctx.drawImage(images.background, 0, 0, W, H);
+      } else {
+        ctx.fillStyle = '#160d10';
+        ctx.fillRect(0, 0, W, H);
+      }
+
+      // War Flags
+      const f1Img = (Math.floor(frameCount / 18) % 2 === 0) ? images.flag1_a : images.flag1_b;
+      const f2Img = (Math.floor(frameCount / 18) % 2 === 0) ? images.flag2_a : images.flag2_b;
+      if (f1Img && f1Img.complete) ctx.drawImage(f1Img, Math.floor(W * 0.08), GROUND_Y - flag_h, Math.floor(flag_h * 0.35), flag_h);
+      if (f2Img && f2Img.complete) ctx.drawImage(f2Img, Math.floor(W * 0.88), GROUND_Y - flag_h, Math.floor(flag_h * 0.35), flag_h);
+
+      // Arena Ground
+      ctx.fillStyle = '#1c1516';
+      ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+      ctx.fillStyle = '#a02820';
+      ctx.fillRect(0, GROUND_Y, W, 4);
+
+      // Aerial Slam Warning Indicator (1.0s before descent)
+      if ((boss.state === 'airborne' && boss.slam_timer <= 60) || boss.state === 'descend') {
+        const indX = boss.slam_target_x;
+        const pulse = Math.abs(Math.sin(frameCount * 0.32));
+
+        // Light Pillar
+        const beamW = 24 + Math.floor(18 * pulse);
+        const grad = ctx.createLinearGradient(indX - beamW / 2, 0, indX + beamW / 2, 0);
+        grad.addColorStop(0, 'rgba(255, 30, 30, 0)');
+        grad.addColorStop(0.5, `rgba(255, 40, 40, ${0.4 + 0.3 * pulse})`);
+        grad.addColorStop(1, 'rgba(255, 30, 30, 0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(indX - beamW / 2, 0, beamW, H);
+
+        // Warning Beacon at top
+        ctx.fillStyle = '#ff2222';
+        ctx.beginPath();
+        ctx.moveTo(indX - 18, 4);
+        ctx.lineTo(indX + 18, 4);
+        ctx.lineTo(indX, 32);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Ground Impact Target Reticle
+        ctx.strokeStyle = `rgba(255, 40, 40, ${0.6 + 0.4 * pulse})`;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.ellipse(indX, GROUND_Y, 80, 24, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // Render Player (Full Scale)
+      const pDrawX = Math.floor(player.x - center_offset);
+      const pDrawY = Math.floor(player.y - feet_offset);
+
+      let pImg = images.walk;
+      let pRows = 5, pCols = 6;
+      let pW = frame_w, pH = frame_h;
+
+      if (player.state === 'dodge') { pImg = images.dodge; }
+      else if (player.state === 'slash') { pImg = images.slash; }
+      else if (player.state === 'kunai') { pImg = images.player_kunai; pW = pk_w; pH = pk_h; }
+      else if (player.state === 'heal') { pImg = images.player_heal; pW = pheal_w; pH = pheal_h; }
+      else if (player.state === 'parry') { pImg = images.parry; }
+
+      drawGridFrame(pImg, pRows, pCols, player.frame_idx, pDrawX, pDrawY, pW, pH, !player.facing_right);
+
+      // Render Boss
+      if (boss.state !== 'airborne') {
+        const bDrawX = Math.floor(boss.x - bi_center);
+        let bDrawY = Math.floor(boss.y - bi_feet);
+
+        let bImg = images.boss_idle;
+        let bRows = 5, bCols = 6;
+        let bW = bi_w, bH = bi_h;
+
+        if (boss.state === 'walk') { bImg = images.boss_walk; bDrawY = Math.floor(boss.y - bw_feet); }
+        else if (boss.state === 'smash') { bImg = images.boss_smash; bDrawY = Math.floor(boss.y - bs_feet); }
+        else if (['spear', 'kunai'].includes(boss.state)) { bImg = images.boss_spear; bW = bsp_w; bH = bsp_h; bDrawY = Math.floor(boss.y - bsp_feet); }
+        else if (boss.state === 'enrage_intro') { bImg = images.boss_enrage; bRows = 15; bCols = 10; bW = be_w; bH = be_h; bDrawY = Math.floor(boss.y - be_feet); }
+        else if (boss.state === 'ascend') { bImg = images.boss_ascent; bDrawY = Math.floor(boss.y - basc_feet); }
+        else if (boss.state === 'descend') { bImg = images.boss_descent; bDrawY = Math.floor(boss.y - bdesc_feet); }
+
+        // Enraged Red Glow Aura
+        if (isEnraged && !['enrage_intro', 'ascend', 'descend'].includes(boss.state)) {
+          ctx.save();
+          ctx.shadowColor = '#ff2211';
+          ctx.shadowBlur = 25;
+          drawGridFrame(bImg, bRows, bCols, boss.frame_idx, bDrawX, bDrawY, bW, bH, !boss.facing_right);
+          ctx.restore();
+        } else {
+          drawGridFrame(bImg, bRows, bCols, boss.frame_idx, bDrawX, bDrawY, bW, bH, !boss.facing_right);
+        }
+
+        // Dark Roar Barrier during Enrage Intro
+        if (boss.state === 'enrage_intro') {
+          const pulse = Math.abs(Math.sin(frameCount * 0.35));
+          const rad = Math.floor(boss_h * 0.65 + 10 * pulse);
+          ctx.strokeStyle = `rgba(220, 25, 25, ${0.5 + 0.4 * pulse})`;
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.arc(boss.x, boss.y - boss_h * 0.5, rad, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+    }
+
+    // --- HUD RENDERING ---
+    function renderTowerHUD() {
+      // Top Title Bar
+      ctx.fillStyle = '#ffd770';
+      ctx.font = 'bold 15px inherit';
+      ctx.textAlign = 'center';
+      ctx.fillText('PAGODA OF THE ASHEN PEAK  •  ASCENT TO THE SUMMIT', W / 2, 28);
+
+      // Player Health in Tower
+      const hudY = 18;
+      const barW = 240;
+      const barH = 18;
+      drawFeudalPanel(40, hudY, barW, barH, '#82201c', 'rgba(20, 12, 12, 0.85)', false);
+      const hpPct = Math.max(0, Math.min(1, player.hp / player.max_hp));
+      ctx.fillStyle = '#b32420';
+      ctx.fillRect(42, hudY + 2, Math.floor((barW - 4) * hpPct), barH - 4);
+      ctx.fillStyle = '#fff';
+      ctx.font = '11px inherit';
+      ctx.textAlign = 'left';
+      ctx.fillText(`ZHAO: ${player.hp} / ${player.max_hp} HP`, 50, hudY + 13);
+
+      // Double Jump Badge
+      const djCol = (player.jumps_left > 0) ? '#ffd770' : '#888';
+      ctx.fillStyle = djCol;
+      ctx.fillText(`DOUBLE JUMP: ${player.jumps_left > 0 ? 'READY' : 'USED'}`, 40, hudY + 34);
+
+      // Gate Prompt Notification
+      if (towerDoorTimer > 0) {
+        ctx.fillStyle = '#ffd770';
+        ctx.font = 'bold 16px inherit';
+        ctx.textAlign = 'center';
+        ctx.fillText(towerDoorMsg, W / 2, H - 35);
+      }
+    }
+
+    function renderArenaHUD() {
+      const barY = 24;
+      const barW = Math.floor(W * 0.38);
+      const barH = 26;
+
+      // Player Health & Posture
+      drawFeudalPanel(Math.floor(W * 0.05), barY, barW, barH, '#82201c');
+      const pLagPct = Math.max(0, Math.min(1, player.displayed_hp / player.max_hp));
+      const pPct = Math.max(0, Math.min(1, player.hp / player.max_hp));
+      ctx.fillStyle = 'rgba(255, 200, 100, 0.5)';
+      ctx.fillRect(Math.floor(W * 0.05) + 3, barY + 3, Math.floor((barW - 6) * pLagPct), barH - 6);
+      ctx.fillStyle = '#b32420';
+      ctx.fillRect(Math.floor(W * 0.05) + 3, barY + 3, Math.floor((barW - 6) * pPct), barH - 6);
+
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 13px inherit';
+      ctx.textAlign = 'left';
+      ctx.fillText(`GREAT GENERAL ZHAO  |  ${player.hp} / ${player.max_hp} HP`, Math.floor(W * 0.05) + 12, barY + 18);
+
+      // Boss Health & Posture
+      drawFeudalPanel(Math.floor(W * 0.57), barY, barW, barH, '#82201c');
+      const bLagPct = Math.max(0, Math.min(1, boss.displayed_hp / boss.max_hp));
+      const bPct = Math.max(0, Math.min(1, boss.hp / boss.max_hp));
+      ctx.fillStyle = 'rgba(255, 200, 100, 0.5)';
+      ctx.fillRect(Math.floor(W * 0.57) + 3, barY + 3, Math.floor((barW - 6) * bLagPct), barH - 6);
+      ctx.fillStyle = isEnraged ? '#ff2211' : '#8c1814';
+      ctx.fillRect(Math.floor(W * 0.57) + 3, barY + 3, Math.floor((barW - 6) * bPct), barH - 6);
+
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 13px inherit';
+      ctx.textAlign = 'right';
+      ctx.fillText(`${boss.hp} / ${boss.max_hp} HP  |  THE HOLLOW MAGISTRATE`, Math.floor(W * 0.57) + barW - 12, barY + 18);
+
+      // Best of 5 Score & Round Badge (Always Visible)
+      ctx.fillStyle = '#ffd770';
+      ctx.font = 'bold 16px inherit';
+      ctx.textAlign = 'center';
+      ctx.fillText(`ROUND ${currentRound} OF 5`, W / 2, barY + 16);
+      ctx.font = '13px inherit';
+      ctx.fillText(`ZHAO: ${playerRoundWins}  ★  MAGISTRATE: ${magistrateRoundWins}`, W / 2, barY + 36);
+
+      // Active Buff Badges
+      let buffTxt = '';
+      if (playerHpBuff > 0) buffTxt += `[+${playerHpBuff} HP BUFF] `;
+      if (playerSpeedBuff) buffTxt += `[+25% SPEED BUFF]`;
+      if (buffTxt) {
+        ctx.fillStyle = '#ffd770';
+        ctx.textAlign = 'left';
+        ctx.fillText(buffTxt, Math.floor(W * 0.05), barY + barH + 20);
+      }
+    }
+
+    function renderMusashiLoreDialog(x, y) {
+      const dw = 480;
+      const dh = 190;
+      drawFeudalPanel(x - dw / 2, y - dh, dw, dh, '#ffd770');
+      ctx.fillStyle = '#ffd770';
+      ctx.font = 'bold 15px inherit';
+      ctx.textAlign = 'center';
+      ctx.fillText('ELDER SHINOBI MUSASHI', x, y - dh + 26);
+      ctx.fillStyle = '#f5e8d0';
+      ctx.font = '12px inherit';
+      ctx.fillText('"The Hollow Magistrate was once the revered guardian of this mountain.', x, y - dh + 56);
+      ctx.fillText('When war ruined the peak, he unearthed the cursed Ashen Blade for power.', x, y - dh + 80);
+      ctx.fillText('The blade hollowed his soul into an immortal beast. He remembers nothing.', x, y - dh + 104);
+      ctx.fillText('Only your blade can grant his spirit rest. Breach the Summit Sanctum!"', x, y - dh + 128);
+    }
+
+    function renderTowerIntroModal() {
+      const mw = 680;
+      const mh = 420;
+      const mx = (W - mw) / 2;
+      const my = (H - mh) / 2;
+      drawFeudalPanel(mx, my, mw, mh, '#ffd770');
+
+      ctx.fillStyle = '#ffd770';
+      ctx.font = 'bold 22px inherit';
+      ctx.textAlign = 'center';
+      ctx.fillText('PAGODA OF THE ASHEN PEAK', W / 2, my + 44);
+      ctx.font = '14px inherit';
+      ctx.fillStyle = '#d4a34b';
+      ctx.fillText('Prologue Ascent to The Hollow Magistrate', W / 2, my + 72);
+
+      const instructions = [
+        ['1. Ascend the Mountain Pagoda', 'Climb across stone arches, rope bridges, and Torii terraces using [A] & [D].'],
+        ['2. Ninja Double Jump', 'Press [W] or [UP] to jump, and press [W] in mid-air to DOUBLE JUMP!'],
+        ['3. Slay Corrupted Ash Sentinels', '1 strike with Sword [Right Shift] or Kunai [Q] vanquishes them!'],
+        ['4. Elder Musashi\'s Lore', 'Hover near Elder Musashi at the Torii Terrace to learn the lore.'],
+        ['5. Breach the Summit Sanctum', 'Reach the moonlit peak to enter the gate and face the Hollow Magistrate!']
+      ];
+
+      instructions.forEach((item, idx) => {
+        const iy = my + 115 + idx * 44;
+        ctx.fillStyle = '#ffd770';
+        ctx.font = 'bold 13px inherit';
+        ctx.textAlign = 'left';
+        ctx.fillText(item[0], mx + 40, iy);
+        ctx.fillStyle = '#f5e8d0';
+        ctx.font = '12px inherit';
+        ctx.fillText(item[1], mx + 40, iy + 18);
+      });
+
+      const btnRect = { x: W / 2 - 130, y: my + mh - 58, w: 260, h: 40 };
+      drawFeudalButton(btnRect, 'BEGIN ASCENT [PRESS SPACE]', false);
+    }
+
+    function renderRoundOverModal() {
+      const mw = 640;
+      const mh = 340;
+      const mx = (W - mw) / 2;
+      const my = (H - mh) / 2;
+      drawFeudalPanel(mx, my, mw, mh, isMatchDefeat ? '#ff3b30' : '#ffd770');
+
+      ctx.fillStyle = isMatchDefeat ? '#ff3b30' : '#ffd770';
+      ctx.font = 'bold 26px inherit';
+      ctx.textAlign = 'center';
+      ctx.fillText(roundOverMsg, W / 2, my + 50);
+
+      ctx.fillStyle = '#f5e8d0';
+      ctx.font = '15px inherit';
+      ctx.fillText(roundOverSub, W / 2, my + 95);
+
+      ctx.fillStyle = '#ffd770';
+      ctx.font = '14px inherit';
+      ctx.fillText(`CURRENT STANDING: ZHAO ${playerRoundWins}  —  MAGISTRATE ${magistrateRoundWins}`, W / 2, my + 140);
+
+      // Buttons
+      const btn1 = { x: mx + 50, y: my + mh - 70, w: 250, h: 42 };
+      const btn2 = { x: mx + mw - 300, y: my + mh - 70, w: 250, h: 42 };
+
+      const isHover1 = (mouse.x >= btn1.x && mouse.x <= btn1.x + btn1.w && mouse.y >= btn1.y && mouse.y <= btn1.y + btn1.h);
+      const isHover2 = (mouse.x >= btn2.x && mouse.x <= btn2.x + btn2.w && mouse.y >= btn2.y && mouse.y <= btn2.y + btn2.h);
+
+      if (gameState === 'MATCH_OVER') {
+        drawFeudalButton(btn1, 'RETRY MATCH', isHover1);
+        drawFeudalButton(btn2, 'RESTART ENTIRE GAME', isHover2);
+
+        if (mouse.clicked) {
+          if (isHover1) { resetFullMatch(); gameState = 'PLAYING'; }
+          else if (isHover2) { resetFullMatch(); gameState = 'TOWER'; initTowerLevel(); }
+        }
+      } else {
+        drawFeudalButton(btn1, 'CONTINUE NEXT ROUND', isHover1);
+        drawFeudalButton(btn2, 'RESTART ENTIRE GAME', isHover2);
+
+        if (mouse.clicked) {
+          if (isHover1) { currentRound++; initArenaRound(); gameState = 'PLAYING'; }
+          else if (isHover2) { resetFullMatch(); gameState = 'TOWER'; initTowerLevel(); }
+        }
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // Main Animation Loop
+    // -------------------------------------------------------------------------
+    function loop() {
+      update();
+      render();
+      requestAnimationFrame(loop);
+    }
+
+    // Start
+    loadAllImages();
+    initTowerLevel();
+    requestAnimationFrame(loop);
+
+  })();
+  </script>
+</body>
+</html>

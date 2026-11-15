@@ -1,4 +1,4 @@
-import os
+﻿import os
 import math
 import random
 import pygame
@@ -29,7 +29,7 @@ ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
 SFX = {}
 for s_name in ["parry_metal", "slash_hit", "ground_slam", "kunai_throw", "heal_spell", "block_wood", "posture_break"]:
     try:
-        p = os.path.join(ASSETS, "sfx", f"{s_name}.wav")
+        p = os.path.join(ASSETS, "sfx", f"{s_name}.ogg")
         if os.path.exists(p):
             SFX[s_name] = pygame.mixer.Sound(p)
     except Exception:
@@ -56,7 +56,7 @@ def play_bgm(track_name, vol=0.65):
     if current_bgm_track == track_name:
         return
     try:
-        p = os.path.join(ASSETS, "sfx", f"{track_name}.wav")
+        p = os.path.join(ASSETS, "sfx", f"{track_name}.ogg")
         if os.path.exists(p):
             pygame.mixer.music.load(p)
             pygame.mixer.music.set_volume(vol)
@@ -863,9 +863,9 @@ def draw_health_bars(surface, p, b, boss_phase, is_enraged):
     r_surf = font_round_banner.render(round_str, True, (255, 225, 130))
     surface.blit(r_surf, r_surf.get_rect(center=(center_x, bar_y - int(H * 0.030))))
 
-    # Win Pips: Zhao ● ○ ○ vs ○ ○ ● Magistrate
-    p_pips = "● " * player_round_wins + "○ " * (3 - player_round_wins)
-    b_pips = "○ " * (3 - boss_round_wins) + "● " * boss_round_wins
+    # Win Pips: Zhao â— â—‹ â—‹ vs â—‹ â—‹ â— Magistrate
+    p_pips = "â— " * player_round_wins + "â—‹ " * (3 - player_round_wins)
+    b_pips = "â—‹ " * (3 - boss_round_wins) + "â— " * boss_round_wins
     score_str = f"ZHAO [ {p_pips.strip()} ]  vs  [ {b_pips.strip()} ] MAGISTRATE"
     score_surf = font_round_score.render(score_str, True, (225, 205, 175))
     surface.blit(score_surf, score_surf.get_rect(center=(center_x, bar_y - int(H * 0.010))))
@@ -916,7 +916,7 @@ def draw_health_bars(surface, p, b, boss_phase, is_enraged):
     surface.blit(f_surf, (margin_x, sub_y))
 
     # Rechargeable Kunai Display
-    kunai_str = f"KUNAI [Q]: {'◆ ' * p['kunai_count']}{'◇ ' * (p['kunai_max'] - p['kunai_count'])}"
+    kunai_str = f"KUNAI [Q]: {'â—† ' * p['kunai_count']}{'â—‡ ' * (p['kunai_max'] - p['kunai_count'])}"
     k_col = (220, 200, 140) if p["kunai_count"] > 0 else (130, 120, 110)
     k_surf = font_hud_info.render(kunai_str, True, k_col)
     surface.blit(k_surf, (margin_x + int(bar_w * 0.50), sub_y))
@@ -996,21 +996,21 @@ GUIDE_SECTIONS = [
         "title": "PROLOGUE: PAGODA OF THE ASHEN PEAK",
         "color": (212, 163, 75),
         "lines": [
-            "  • Pagoda Ascent : Climb 3 vertical tiers across stone arches, rope bridges, and Torii terraces.",
-            "  • Ninja Double Jump : Press [W] / [UP] to jump, and press [W] in mid-air to DOUBLE JUMP! (Tower only).",
-            "  • Ash Sentinels : Corrupted guards patrol the platforms. 1 strike with Sword or Kunai slays them!",
-            "  • Elder Musashi : Hover over the hermit on the Torii Terrace (Tier II) to hear lore of Zhao & Magistrate.",
-            "  • Summit Sanctum: Reach the peak gate and press [W] or [ENTER] to face the boss!",
+            "  â€¢ Pagoda Ascent : Climb 3 vertical tiers across stone arches, rope bridges, and Torii terraces.",
+            "  â€¢ Ninja Double Jump : Press [W] / [UP] to jump, and press [W] in mid-air to DOUBLE JUMP! (Tower only).",
+            "  â€¢ Ash Sentinels : Corrupted guards patrol the platforms. 1 strike with Sword or Kunai slays them!",
+            "  â€¢ Elder Musashi : Hover over the hermit on the Torii Terrace (Tier II) to hear lore of Zhao & Magistrate.",
+            "  â€¢ Summit Sanctum: Reach the peak gate and press [W] or [ENTER] to face the boss!",
         ]
     },
     {
         "title": "BEST OF 5 (BO5) SYSTEM & BOUNCE BACK BUFFS",
         "color": (255, 225, 120),
         "lines": [
-            "  • Format          : Best of 5 rounds. First to win 3 rounds claims victory!",
-            "  • 1st Loss Buff   : Suffer a round loss to receive a permanent +30 Max HP Buff (BOUNCE BACK)!",
-            "  • 2nd Loss Buff   : Suffer a second loss to gain +25% Movement Speed and +25% Attack Speed (FINAL BOUNCE BACK)!",
-            "  • 3rd Loss Defeat : If the Magistrate claims 3 rounds, he wins the match.",
+            "  â€¢ Format          : Best of 5 rounds. First to win 3 rounds claims victory!",
+            "  â€¢ 1st Loss Buff   : Suffer a round loss to receive a permanent +30 Max HP Buff (BOUNCE BACK)!",
+            "  â€¢ 2nd Loss Buff   : Suffer a second loss to gain +25% Movement Speed and +25% Attack Speed (FINAL BOUNCE BACK)!",
+            "  â€¢ 3rd Loss Defeat : If the Magistrate claims 3 rounds, he wins the match.",
         ]
     },
     {
@@ -1033,14 +1033,14 @@ GUIDE_SECTIONS = [
         "title": "SOULSLIKE BOSS PHASES & REBALANCED DAMAGE",
         "color": (235, 110, 95),
         "lines": [
-            "  • Phase I  (100% - 66% HP): Tactical pacing. Spear throws at range, greatsword slams close.",
-            "  • Phase II (66% - 33% HP) : Red Mist awakens! Magistrate speeds up with +25% damage.",
-            "  • Phase III (<= 33% HP / Enraged <= 10%): 5.5s dark roar! Attacks 70% faster, healing locked.",
-            "  • Boss Invulnerability    : The Magistrate is completely immune to damage during phase transitions",
+            "  â€¢ Phase I  (100% - 66% HP): Tactical pacing. Spear throws at range, greatsword slams close.",
+            "  â€¢ Phase II (66% - 33% HP) : Red Mist awakens! Magistrate speeds up with +25% damage.",
+            "  â€¢ Phase III (<= 33% HP / Enraged <= 10%): 5.5s dark roar! Attacks 70% faster, healing locked.",
+            "  â€¢ Boss Invulnerability    : The Magistrate is completely immune to damage during phase transitions",
             "                              and while leaping into the sky (Aerial Slam).",
-            "  • Aerial Sky Slam Attack  : Magistrate leaps into the sky! A red light indicator appears at the",
+            "  â€¢ Aerial Sky Slam Attack  : Magistrate leaps into the sky! A red light indicator appears at the",
             "                              top of the screen 1s before descent. Dodge or parry the crash AOE shockwave!",
-            "  • Balance Adjustments     : Boss sword damage decreased by 20%, spear damage decreased by 10%.",
+            "  â€¢ Balance Adjustments     : Boss sword damage decreased by 20%, spear damage decreased by 10%.",
         ]
     },
     {
@@ -1292,7 +1292,7 @@ def update_tower_level(keys, mouse_pos, mouse_clicked):
                         p["y"] = TOWER_H - 80
                         p["vy"] = 0.0
                         p["jumps_left"] = 2
-                        tower_door_msg = "★ DEFEATED BY SENTINELS — RESPAWNED AT TOWER BASE ★"
+                        tower_door_msg = "â˜… DEFEATED BY SENTINELS â€” RESPAWNED AT TOWER BASE â˜…"
                         tower_door_timer = 180
 
     # Update Projectiles in Tower
@@ -1315,7 +1315,7 @@ def update_tower_level(keys, mouse_pos, mouse_clicked):
     gate_cx = tower_gate["x"] + tower_gate["w"] // 2
     summit_gate_bottom = tower_gate["y"] + tower_gate["h"]
     if abs(p["x"] - gate_cx) < int(W * 0.16) and p["y"] <= summit_gate_bottom + 15:
-        tower_door_msg = "★ PRESS [W] OR [ENTER] TO UNSEAL GATE & FACE THE HOLLOW MAGISTRATE ★"
+        tower_door_msg = "â˜… PRESS [W] OR [ENTER] TO UNSEAL GATE & FACE THE HOLLOW MAGISTRATE â˜…"
         tower_door_timer = 15
         if keys[pygame.K_w] or keys[pygame.K_RETURN] or keys[pygame.K_UP]:
             play_sfx("posture_break", 1.0)
@@ -1530,7 +1530,7 @@ def draw_tower_level(surface, mouse_pos):
         pygame.draw.line(surface, (135, 90, 50), (nx - 18, ny), (nx - 18, ny - 80), 3)
         pygame.draw.circle(surface, (212, 163, 75), (nx - 18, ny - 80), 5, 2)
 
-        npc_lbl = font_hud_info.render("[ELDER MUSASHI — HOVER TO LISTEN]", True, (255, 225, 130))
+        npc_lbl = font_hud_info.render("[ELDER MUSASHI â€” HOVER TO LISTEN]", True, (255, 225, 130))
         surface.blit(npc_lbl, npc_lbl.get_rect(center=(nx, ny - 98)))
 
     # 8. One-Shot Minions (Corrupted Ash Sentinels)
@@ -1634,7 +1634,7 @@ def draw_tower_level(surface, mouse_pos):
     dj_surf = font_bar_val.render(dj_text, True, dj_col)
     surface.blit(dj_surf, (int(W * 0.05), hud_y + p_bar_h + 4))
 
-    k_surf = font_tower_hud.render("PAGODA OF THE ASHEN PEAK  •  ASCENT TO THE SUMMIT", True, (255, 220, 95))
+    k_surf = font_tower_hud.render("PAGODA OF THE ASHEN PEAK  â€¢  ASCENT TO THE SUMMIT", True, (255, 220, 95))
     surface.blit(k_surf, k_surf.get_rect(center=(W // 2, hud_y + p_bar_h // 2)))
 
     if p["y"] > TOWER_H - 900:
@@ -1668,7 +1668,7 @@ def draw_tower_level(surface, mouse_pos):
         d_rect = pygame.Rect((W - diag_w) // 2, int(H * 0.66), diag_w, diag_h)
         draw_feudal_panel(surface, d_rect, border_col=(212, 163, 75), bg_col=(18, 12, 12, 250), gold_corners=True)
 
-        spk_surf = font_dialogue_name.render("ELDER SHINOBI MUSASHI  •  KEEPER OF THE ASHEN RECORD", True, (255, 215, 80))
+        spk_surf = font_dialogue_name.render("ELDER SHINOBI MUSASHI  â€¢  KEEPER OF THE ASHEN RECORD", True, (255, 215, 80))
         surface.blit(spk_surf, (d_rect.x + 24, d_rect.y + 16))
         pygame.draw.line(surface, (140, 32, 28), (d_rect.x + 20, d_rect.y + 45), (d_rect.right - 20, d_rect.y + 45), 2)
 
@@ -1837,7 +1837,7 @@ while running:
         screen.blit(t_shadow, (t_rect.x + 3, t_rect.y + 3))
         screen.blit(t_surf, t_rect)
 
-        sub_surf = font_sub.render("Pagoda Tower Descent  •  Best of 5 Hollow Magistrate Encounter", True, (212, 163, 75))
+        sub_surf = font_sub.render("Pagoda Tower Descent  â€¢  Best of 5 Hollow Magistrate Encounter", True, (212, 163, 75))
         screen.blit(sub_surf, sub_surf.get_rect(center=(W // 2, int(H * 0.30))))
 
         draw_crossed_swords(screen, W // 2, int(H * 0.39), radius=int(H * 0.040))
@@ -1871,7 +1871,7 @@ while running:
         content_box = pygame.Rect(int(W * 0.08), int(H * 0.05), int(W * 0.84), int(H * 0.82))
         draw_feudal_panel(screen, content_box, border_col=(140, 32, 28), bg_col=(20, 14, 12, 240))
 
-        g_title = font_guide_head.render("HAVEN HACKATHON — SHINOBI COMBAT MANUAL", True, (245, 225, 185))
+        g_title = font_guide_head.render("HAVEN HACKATHON â€” SHINOBI COMBAT MANUAL", True, (245, 225, 185))
         screen.blit(g_title, g_title.get_rect(center=(W // 2, int(H * 0.10))))
         pygame.draw.line(screen, (212, 163, 75), (int(W * 0.15), int(H * 0.14)), (int(W * 0.85), int(H * 0.14)), 2)
 
@@ -2714,15 +2714,15 @@ while running:
             pygame.draw.circle(b_surf, (255, 140, 140, int(45 + 45 * e_pulse)), (barrier_rad + 6, barrier_rad + 6), barrier_rad - 6, 2)
             screen.blit(b_surf, (int(b["x"] - barrier_rad - 6) + shake_x, int(b["y"] - be_feet * 0.6 - barrier_rad - 6) + shake_y))
 
-            inv_txt = font_stun_banner.render("⚡ MAGISTRATE ENRAGING — INVULNERABLE ⚡", True, (255, 70, 70))
-            inv_shadow = font_stun_banner.render("⚡ MAGISTRATE ENRAGING — INVULNERABLE ⚡", True, (20, 0, 0))
+            inv_txt = font_stun_banner.render("âš¡ MAGISTRATE ENRAGING â€” INVULNERABLE âš¡", True, (255, 70, 70))
+            inv_shadow = font_stun_banner.render("âš¡ MAGISTRATE ENRAGING â€” INVULNERABLE âš¡", True, (20, 0, 0))
             inv_rect = inv_txt.get_rect(center=(int(b["x"]) + shake_x, int(b["y"] - boss_h * 1.15) + shake_y))
             screen.blit(inv_shadow, (inv_rect.x + 2, inv_rect.y + 2))
             screen.blit(inv_txt, inv_rect)
 
         if b["is_stunned"]:
-            st_text = font_stun_banner.render("★ POSTURE BROKEN — CRITICAL STRIKE! ★", True, (255, 220, 60))
-            st_shadow = font_stun_banner.render("★ POSTURE BROKEN — CRITICAL STRIKE! ★", True, (20, 10, 5))
+            st_text = font_stun_banner.render("â˜… POSTURE BROKEN â€” CRITICAL STRIKE! â˜…", True, (255, 220, 60))
+            st_shadow = font_stun_banner.render("â˜… POSTURE BROKEN â€” CRITICAL STRIKE! â˜…", True, (20, 10, 5))
             st_rect = st_text.get_rect(center=(int(b["x"]) + shake_x, int(b["y"] - boss_h * 1.15) + shake_y))
             screen.blit(st_shadow, (st_rect.x + 2, st_rect.y + 2))
             screen.blit(st_text, st_rect)
@@ -2770,7 +2770,7 @@ while running:
         rw_sub = font_end_sub.render(sub_str, True, (240, 230, 200))
         screen.blit(rw_sub, rw_sub.get_rect(center=(W // 2, int(H * 0.28))))
 
-        score_info = f"Current Match Score: Zhao {player_round_wins} — {boss_round_wins} Hollow Magistrate"
+        score_info = f"Current Match Score: Zhao {player_round_wins} â€” {boss_round_wins} Hollow Magistrate"
         rw_score = font_bar_val.render(score_info, True, (215, 185, 110))
         screen.blit(rw_score, rw_score.get_rect(center=(W // 2, int(H * 0.34))))
 
@@ -2860,7 +2860,7 @@ while running:
         fbb_sub = font_end_sub.render(f"On the brink! Play again to receive Movement Speed & Attack Speed Buffs!", True, (255, 220, 200))
         screen.blit(fbb_sub, fbb_sub.get_rect(center=(W // 2, int(H * 0.28))))
 
-        perk_msg = f"Perks Active: +30 Max HP  •  +25% Movement Speed  •  +25% Attack Speed!"
+        perk_msg = f"Perks Active: +30 Max HP  â€¢  +25% Movement Speed  â€¢  +25% Attack Speed!"
         fbb_perk = font_bar_val.render(perk_msg, True, (100, 240, 255))
         screen.blit(fbb_perk, fbb_perk.get_rect(center=(W // 2, int(H * 0.34))))
 
@@ -2905,7 +2905,7 @@ while running:
         d_sub = font_end_sub.render(f"The Hollow Magistrate has claimed 3 rounds to conquer the match! Will you try again?", True, (235, 200, 200))
         screen.blit(d_sub, d_sub.get_rect(center=(W // 2, int(H * 0.28))))
 
-        score_info = f"Final Score: Hollow Magistrate {boss_round_wins} — {player_round_wins} Great General Zhao"
+        score_info = f"Final Score: Hollow Magistrate {boss_round_wins} â€” {player_round_wins} Great General Zhao"
         d_score = font_bar_val.render(score_info, True, (215, 120, 110))
         screen.blit(d_score, d_score.get_rect(center=(W // 2, int(H * 0.34))))
 
@@ -2948,7 +2948,7 @@ while running:
         v_sub = font_end_sub.render(f"Great General Zhao claims match triumph ({player_round_wins} - {boss_round_wins})! The Magistrate is vanquished!", True, (240, 230, 200))
         screen.blit(v_sub, v_sub.get_rect(center=(W // 2, int(H * 0.28))))
 
-        score_info = f"Final Score: Great General Zhao {player_round_wins} — {boss_round_wins} The Hollow Magistrate"
+        score_info = f"Final Score: Great General Zhao {player_round_wins} â€” {boss_round_wins} The Hollow Magistrate"
         v_score = font_bar_val.render(score_info, True, (212, 185, 90))
         screen.blit(v_score, v_score.get_rect(center=(W // 2, int(H * 0.34))))
 
@@ -2976,3 +2976,4 @@ while running:
     clock.tick(60)
 
 pygame.quit()
+
