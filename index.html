@@ -4,83 +4,75 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Haven Hackathon - Shinobi: Legend of Zhao</title>
-  <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      user-select: none;
-      -webkit-user-select: none;
-    }
-    body, html {
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background-color: #0c0809;
-      background-image: radial-gradient(circle at center, #1a0f12 0%, #080506 100%);
-      font-family: 'Cinzel', 'Palatino Linotype', 'Book Antiqua', 'Georgia', serif;
-      color: #f5e8d0;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-    #game-container {
-      position: relative;
-      width: 100vw;
-      height: 100vh;
-      max-width: 177.78vh; /* 16:9 Aspect Ratio */
-      max-height: 56.25vw;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      box-shadow: 0 0 60px rgba(0, 0, 0, 0.9), 0 0 15px rgba(180, 40, 30, 0.3);
-      border: 2px solid #3d261e;
-    }
-    canvas {
-      width: 100%;
-      height: 100%;
-      display: block;
-      image-rendering: -webkit-optimize-contrast;
-      image-rendering: crisp-edges;
-      cursor: crosshair;
-    }
-    #ui-bar {
-      position: absolute;
-      top: 10px;
-      right: 14px;
-      display: flex;
-      gap: 10px;
-      z-index: 100;
-    }
-    .feudal-btn {
-      background: linear-gradient(180deg, #2a1816 0%, #150a0a 100%);
-      border: 1px solid #c8a355;
-      color: #f7e6c4;
-      padding: 6px 14px;
-      font-size: 13px;
-      font-family: inherit;
-      letter-spacing: 1px;
-      cursor: pointer;
-      border-radius: 2px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.6);
-      transition: all 0.2s ease;
-      text-transform: uppercase;
-    }
-    .feudal-btn:hover {
-      background: linear-gradient(180deg, #481e18 0%, #260f0e 100%);
-      border-color: #ffd770;
-      color: #fff;
-      transform: translateY(-1px);
-      box-shadow: 0 4px 10px rgba(180, 40, 30, 0.5);
-    }
-  </style>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div id="game-container">
+    <div class="feudal-corner corner-tl"></div>
+    <div class="feudal-corner corner-tr"></div>
+    <div class="feudal-corner corner-bl"></div>
+    <div class="feudal-corner corner-br"></div>
+
     <canvas id="gameCanvas" width="1280" height="720"></canvas>
+
     <div id="ui-bar">
+      <button id="btn-controls" class="feudal-btn">📜 CONTROLS</button>
       <button id="btn-audio" class="feudal-btn">🔊 AUDIO: ON</button>
       <button id="btn-fullscreen" class="feudal-btn">⛶ FULLSCREEN</button>
+    </div>
+
+    <!-- Feudal Controls Modal Overlay -->
+    <div id="controls-modal">
+      <div class="modal-content">
+        <h2 class="modal-title">SHINOBI COMBAT SCROLL</h2>
+        <p class="modal-subtitle">Great General Zhao • Techniques & Keybindings</p>
+        <div class="divider"></div>
+
+        <div class="controls-grid">
+          <div class="control-item">
+            <span class="control-label">Move Left / Right</span>
+            <span class="keycap">[A] / [D]</span>
+          </div>
+          <div class="control-item">
+            <span class="control-label">Jump (Mid-Air Double Jump)</span>
+            <span class="keycap">[W] / [UP]</span>
+          </div>
+          <div class="control-item">
+            <span class="control-label">Drop Through Platforms</span>
+            <span class="keycap">[S] / [DOWN]</span>
+          </div>
+          <div class="control-item">
+            <span class="control-label">Dodge Roll (Invulnerability)</span>
+            <span class="keycap">[L-SHIFT]</span>
+          </div>
+          <div class="control-item">
+            <span class="control-label">Sword Slash (+20% Speed)</span>
+            <span class="keycap">[R-SHIFT]</span>
+          </div>
+          <div class="control-item">
+            <span class="control-label">Parry / Guard (14f Deflect)</span>
+            <span class="keycap">[RIGHT CLICK]</span>
+          </div>
+          <div class="control-item">
+            <span class="control-label">Throw Kunai (Recharging)</span>
+            <span class="keycap">[Q]</span>
+          </div>
+          <div class="control-item">
+            <span class="control-label">Healing Gourd (+50 HP)</span>
+            <span class="keycap">[E]</span>
+          </div>
+          <div class="control-item">
+            <span class="control-label">Testing Strike (-200 Boss HP)</span>
+            <span class="keycap">[T]</span>
+          </div>
+          <div class="control-item">
+            <span class="control-label">Unseal Summit Gate</span>
+            <span class="keycap">[W] / [ENTER]</span>
+          </div>
+        </div>
+
+        <button id="btn-close-controls" class="feudal-btn close-modal-btn">CLOSE SCROLL [ESC]</button>
+      </div>
     </div>
   </div>
 
@@ -779,7 +771,23 @@
 
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-    // UI Buttons
+    // UI Buttons & Modal Controls
+    const controlsModal = document.getElementById('controls-modal');
+    const toggleControls = (show) => {
+      if (typeof show === 'boolean') {
+        controlsModal.classList.toggle('active', show);
+      } else {
+        controlsModal.classList.toggle('active');
+      }
+    };
+
+    document.getElementById('btn-controls').addEventListener('click', () => toggleControls(true));
+    document.getElementById('btn-close-controls').addEventListener('click', () => toggleControls(false));
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Escape') toggleControls(false);
+    });
+
     document.getElementById('btn-audio').addEventListener('click', () => {
       const active = audio.toggleMute();
       document.getElementById('btn-audio').textContent = active ? '🔊 AUDIO: ON' : '🔇 AUDIO: MUTED';

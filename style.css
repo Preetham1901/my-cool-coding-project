@@ -1,0 +1,322 @@
+/* ==========================================================================
+   Haven Hackathon - Shinobi: Legend of Zhao
+   Feudal Japanese Design Stylesheet
+   ========================================================================== */
+
+/* 1. Custom Typography & Fonts */
+@font-face {
+  font-family: 'GangOfThree';
+  src: url('assets/go3v2.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Noto+Serif+JP:wght@400;600;700&display=swap');
+
+:root {
+  --gold-primary: #d4a34b;
+  --gold-bright: #ffd770;
+  --gold-dark: #8c6a28;
+  --crimson-primary: #a62420;
+  --crimson-dark: #5a1210;
+  --crimson-glow: rgba(220, 35, 25, 0.45);
+  --bg-deep: #0a0607;
+  --bg-panel: rgba(16, 10, 11, 0.95);
+  --parchment: #f5e8d0;
+  --parchment-muted: #c8b9a0;
+  --border-gold: #c8a355;
+}
+
+/* 2. Base Reset & Layout */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--bg-deep);
+  background-image: 
+    radial-gradient(circle at 50% 40%, #1e0f13 0%, #0a0607 80%),
+    radial-gradient(circle at 80% 20%, rgba(180, 35, 25, 0.15) 0%, transparent 50%),
+    radial-gradient(circle at 20% 80%, rgba(180, 35, 25, 0.10) 0%, transparent 50%);
+  font-family: 'Cinzel', 'Noto Serif JP', 'Georgia', serif;
+  color: var(--parchment);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Atmospheric Background Vignette */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: radial-gradient(circle at center, transparent 40%, rgba(0, 0, 0, 0.85) 100%);
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* 3. Game Container (Aspect Ratio 16:9 with Feudal Lacquer Frame) */
+#game-container {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  max-width: 177.78vh; /* 16:9 Aspect Ratio */
+  max-height: 56.25vw;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #000;
+  border: 3px solid #2a1614;
+  outline: 1px solid var(--border-gold);
+  box-shadow: 
+    0 0 70px rgba(0, 0, 0, 0.95),
+    0 0 25px rgba(180, 35, 25, 0.35),
+    inset 0 0 30px rgba(0, 0, 0, 0.8);
+  border-radius: 2px;
+}
+
+/* 4. Canvas Display */
+canvas#gameCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+  cursor: crosshair;
+}
+
+/* 5. Feudal Ornate Corner Brackets */
+.feudal-corner {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  pointer-events: none;
+  z-index: 30;
+  border-color: var(--gold-bright);
+}
+
+.feudal-corner::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background-color: var(--crimson-primary);
+  border: 1px solid var(--gold-bright);
+}
+
+.corner-tl {
+  top: -2px; left: -2px;
+  border-top: 3px solid var(--gold-bright);
+  border-left: 3px solid var(--gold-bright);
+}
+.corner-tl::after { top: 3px; left: 3px; }
+
+.corner-tr {
+  top: -2px; right: -2px;
+  border-top: 3px solid var(--gold-bright);
+  border-right: 3px solid var(--gold-bright);
+}
+.corner-tr::after { top: 3px; right: 3px; }
+
+.corner-bl {
+  bottom: -2px; left: -2px;
+  border-bottom: 3px solid var(--gold-bright);
+  border-left: 3px solid var(--gold-bright);
+}
+.corner-bl::after { bottom: 3px; left: 3px; }
+
+.corner-br {
+  bottom: -2px; right: -2px;
+  border-bottom: 3px solid var(--gold-bright);
+  border-right: 3px solid var(--gold-bright);
+}
+.corner-br::after { bottom: 3px; right: 3px; }
+
+/* 6. Feudal UI Top Header Bar */
+#ui-bar {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  display: flex;
+  gap: 10px;
+  z-index: 100;
+}
+
+/* Feudal Action Buttons */
+.feudal-btn {
+  background: linear-gradient(180deg, #2c1614 0%, #160a0a 100%);
+  border: 1px solid var(--border-gold);
+  color: var(--parchment);
+  padding: 7px 15px;
+  font-size: 12px;
+  font-family: 'Cinzel', inherit;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  cursor: pointer;
+  border-radius: 2px;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 215, 112, 0.2);
+  transition: all 0.22s ease-in-out;
+  text-transform: uppercase;
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.feudal-btn::before {
+  content: '';
+  position: absolute;
+  top: 0; left: -100%;
+  width: 100%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 215, 112, 0.2), transparent);
+  transition: 0.5s;
+}
+
+.feudal-btn:hover {
+  background: linear-gradient(180deg, #4a1c17 0%, #260e0d 100%);
+  border-color: var(--gold-bright);
+  color: #ffffff;
+  transform: translateY(-2px);
+  box-shadow: 
+    0 5px 14px rgba(180, 35, 25, 0.55),
+    0 0 10px rgba(255, 215, 112, 0.3);
+}
+
+.feudal-btn:hover::before {
+  left: 100%;
+}
+
+.feudal-btn:active {
+  transform: translateY(1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+}
+
+/* 7. Feudal Controls Modal Overlay */
+#controls-modal {
+  display: none;
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(8, 4, 5, 0.85);
+  backdrop-filter: blur(4px);
+  z-index: 200;
+  justify-content: center;
+  align-items: center;
+  animation: modalFadeIn 0.25s ease-out;
+}
+
+#controls-modal.active {
+  display: flex;
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.modal-content {
+  position: relative;
+  width: 90%;
+  max-width: 680px;
+  background: linear-gradient(180deg, #180c0e 0%, #0d0607 100%);
+  border: 2px solid var(--border-gold);
+  outline: 1px solid #5a1412;
+  box-shadow: 
+    0 0 40px rgba(0, 0, 0, 0.9),
+    0 0 20px rgba(180, 35, 25, 0.4);
+  padding: 30px 35px;
+  border-radius: 3px;
+}
+
+.modal-title {
+  font-family: 'GangOfThree', 'Cinzel', serif;
+  font-size: 26px;
+  color: var(--gold-bright);
+  text-align: center;
+  letter-spacing: 2px;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8), 0 0 10px rgba(212, 163, 75, 0.3);
+  margin-bottom: 6px;
+}
+
+.modal-subtitle {
+  text-align: center;
+  color: var(--gold-primary);
+  font-size: 13px;
+  letter-spacing: 1px;
+  margin-bottom: 22px;
+  text-transform: uppercase;
+}
+
+.divider {
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--border-gold), var(--crimson-primary), var(--border-gold), transparent);
+  margin: 16px 0;
+}
+
+.controls-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px 20px;
+  margin-bottom: 24px;
+}
+
+.control-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(28, 14, 16, 0.6);
+  border: 1px solid rgba(200, 163, 85, 0.25);
+  border-radius: 2px;
+}
+
+.control-label {
+  font-size: 12.5px;
+  color: var(--parchment);
+  letter-spacing: 0.5px;
+}
+
+.keycap {
+  display: inline-block;
+  background: linear-gradient(180deg, #3d1c1a 0%, #1f0b0a 100%);
+  border: 1px solid var(--border-gold);
+  color: var(--gold-bright);
+  font-family: monospace, inherit;
+  font-weight: bold;
+  font-size: 11.5px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.7);
+  letter-spacing: 1px;
+}
+
+.close-modal-btn {
+  display: block;
+  margin: 0 auto;
+  min-width: 180px;
+  padding: 9px 20px;
+  font-size: 13px;
+}
+
+/* 8. Responsive Adjustments */
+@media (max-width: 768px) {
+  .controls-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .modal-content {
+    padding: 20px 22px;
+  }
+  .feudal-btn {
+    padding: 5px 10px;
+    font-size: 11px;
+  }
+}
