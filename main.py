@@ -105,6 +105,10 @@ font_end_sub = get_font(int(H * 0.023))
 font_stun_banner = get_font(int(H * 0.030))
 font_round_banner = get_font(int(H * 0.024))
 font_round_score = get_font(int(H * 0.019))
+font_tower_title = get_font(int(H * 0.042))
+font_dialogue_name = get_font(int(H * 0.024))
+font_dialogue_body = get_font(int(H * 0.017))
+font_tower_hud = get_font(int(H * 0.020))
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +158,11 @@ def extract_grid_frames(name, rows, cols, solidify=False):
 # ---------------------------------------------------------------------------
 bg_raw = load_image("background.jpg")
 bg = pygame.transform.scale(bg_raw, (W, H))
+
+# Authentic Pagoda Mountain Vertical Background (from uploaded artwork)
+tower_bg_raw = load_image("tower_bg.jpg")
+TOWER_H = max(3400, int(H * 4.0))
+tower_bg = pygame.transform.smoothscale(tower_bg_raw, (W, TOWER_H))
 
 FLAG_SCALE = 0.35
 flag_h = int(H * FLAG_SCALE)
@@ -269,6 +278,33 @@ pheal_feet_offset = int(165 * ph_scale)
 pheal_center_offset = pheal_w // 2
 player_heal_frames = [pygame.transform.smoothscale(f, (pheal_w, pheal_h)) for f in raw_player_heal]
 
+# Pagoda Phase Player Scaling (Scaled down by 70%, i.e. 30% scale)
+TOWER_PLAYER_SCALE_FACTOR = 0.30
+tower_player_h = int(player_h * TOWER_PLAYER_SCALE_FACTOR)
+tower_frame_w = max(1, int(frame_w * TOWER_PLAYER_SCALE_FACTOR))
+tower_frame_h = max(1, int(frame_h * TOWER_PLAYER_SCALE_FACTOR))
+tower_feet_offset = int(feet_offset * TOWER_PLAYER_SCALE_FACTOR)
+tower_center_offset = tower_frame_w // 2
+
+tower_walk_frames = [pygame.transform.smoothscale(f, (tower_frame_w, tower_frame_h)) for f in raw_walk_frames]
+tower_dodge_frames = [pygame.transform.smoothscale(f, (tower_frame_w, tower_frame_h)) for f in raw_dodge_frames]
+tower_slash_frames = [pygame.transform.smoothscale(f, (tower_frame_w, tower_frame_h)) for f in raw_slash_frames]
+tower_parry_frames = [pygame.transform.smoothscale(f, (tower_frame_w, tower_frame_h)) for f in raw_parry_frames]
+tower_idle_open = pygame.transform.smoothscale(raw_idle_open, (tower_frame_w, tower_frame_h))
+tower_idle_blink = pygame.transform.smoothscale(raw_idle_blink, (tower_frame_w, tower_frame_h))
+
+tower_pk_w = max(1, int(pk_w * TOWER_PLAYER_SCALE_FACTOR))
+tower_pk_h = max(1, int(pk_h * TOWER_PLAYER_SCALE_FACTOR))
+tower_pk_feet_offset = int(pk_feet_offset * TOWER_PLAYER_SCALE_FACTOR)
+tower_pk_center_offset = tower_pk_w // 2
+tower_player_kunai_frames = [pygame.transform.smoothscale(f, (tower_pk_w, tower_pk_h)) for f in raw_player_kunai]
+
+tower_pheal_w = max(1, int(pheal_w * TOWER_PLAYER_SCALE_FACTOR))
+tower_pheal_h = max(1, int(pheal_h * TOWER_PLAYER_SCALE_FACTOR))
+tower_pheal_feet_offset = int(pheal_feet_offset * TOWER_PLAYER_SCALE_FACTOR)
+tower_pheal_center_offset = tower_pheal_w // 2
+tower_player_heal_frames = [pygame.transform.smoothscale(f, (tower_pheal_w, tower_pheal_h)) for f in raw_player_heal]
+
 
 # ---------------------------------------------------------------------------
 # Boss (The Hollow Magistrate) Sprites & Scaling
@@ -345,6 +381,12 @@ kh = int(kw * (188.0 / 948.0))
 kunai_item_right = pygame.transform.smoothscale(raw_kunai_item, (kw, kh))
 kunai_item_left = pygame.transform.flip(kunai_item_right, True, False)
 
+# Tower-scaled Kunai
+tower_kw = max(1, int(kw * TOWER_PLAYER_SCALE_FACTOR))
+tower_kh = max(1, int(kh * TOWER_PLAYER_SCALE_FACTOR))
+tower_kunai_item_right = pygame.transform.smoothscale(raw_kunai_item, (tower_kw, tower_kh))
+tower_kunai_item_left = pygame.transform.flip(tower_kunai_item_right, True, False)
+
 raw_spear_sub = raw_boss_spear[16].subsurface(pygame.Rect(
     int(raw_boss_spear[16].get_width() * 0.45),
     int(raw_boss_spear[16].get_height() * 0.25),
@@ -396,6 +438,8 @@ player = {
     "kunai_max": 3,
     "kunai_recharge_timer": 0,   # 240 ticks = 4.0s per recharge
     "is_blocking": False,
+    "jumps_left": 2,             # Double jump in tower platformer level (2 = ready)
+    "jump_key_prev": False,
 }
 
 boss = {
@@ -505,6 +549,8 @@ def reset_round_entities():
     player["kunai_count"] = player["kunai_max"]
     player["kunai_recharge_timer"] = 0
     player["is_blocking"] = False
+    player["jumps_left"] = 1     # Boss fight: single jump only!
+    player["jump_key_prev"] = False
 
     boss["hp"] = boss["max_hp"]
     boss["displayed_hp"] = float(boss["max_hp"])
@@ -540,7 +586,7 @@ def start_next_round():
 
 
 def reset_full_match():
-    """Resets entire Best of 5 match from Round 1."""
+    """Resets entire Best of 5 match from Round 1 (Boss Fight directly)."""
     global current_round, player_round_wins, boss_round_wins, player_hp_buff, player_speed_buff, game_state
     current_round = 1
     player_round_wins = 0
@@ -549,6 +595,191 @@ def reset_full_match():
     player_speed_buff = False
     reset_round_entities()
     game_state = "PLAYING"
+
+
+# ---------------------------------------------------------------------------
+# Vertical Platformer Tower Level ("Pagoda of the Ashen Peak")
+# ---------------------------------------------------------------------------
+# TOWER_H is defined above as max(3400, int(H * 4.0)) matching tower_bg
+tower_camera_y = float(TOWER_H - H)
+tower_intro_dismissed = False
+tower_door_msg = ""
+tower_door_timer = 0
+tower_damage_cooldown = 0
+tower_platforms = []
+tower_ladders = []
+tower_minions = []
+tower_npc = {}
+tower_gate = {}
+tower_ambient_particles = []
+tower_momiji_leaves = []
+
+
+def init_tower_level():
+    """Initializes the Pagoda Tower vertical platformer level."""
+    global tower_camera_y, tower_intro_dismissed, tower_door_msg, tower_door_timer, tower_damage_cooldown
+    global tower_platforms, tower_ladders, tower_minions, tower_npc, tower_gate, tower_ambient_particles, tower_momiji_leaves
+    global projectiles, sparks
+
+    tower_camera_y = float(TOWER_H - H)
+    tower_intro_dismissed = False
+    tower_door_msg = ""
+    tower_door_timer = 0
+    tower_damage_cooldown = 0
+    projectiles = []
+    sparks = []
+
+    # Reset player position to Tower Base
+    effective_max_hp = 100 + player_hp_buff
+    player["max_hp"] = effective_max_hp
+    player["hp"] = effective_max_hp
+    player["displayed_hp"] = float(effective_max_hp)
+    player["x"] = int(W * 0.20)
+    player["y"] = TOWER_H - 80
+    player["vy"] = 0.0
+    player["on_ground"] = True
+    player["jumps_left"] = 2             # Double jump enabled in platformer!
+    player["jump_key_prev"] = False
+    player["facing_right"] = True
+    player["state"] = "idle"
+    player["frame_idx"] = 0
+    player["anim_time"] = 0.0
+    player["tick_count"] = 0
+    player["kunai_count"] = player["kunai_max"]
+    player["kunai_recharge_timer"] = 0
+    player["heal_used"] = False
+    player["heal_timer"] = 0
+
+    # 1. Pagoda Platforms across 3 Tiers + Ground + Summit matching the uploaded artwork
+    # Types: "ground", "stone", "bridge", "torii_terrace", "timber", "roof", "summit"
+    summit_platform_y = TOWER_H - 2700
+
+    tower_platforms = [
+        # Ground base
+        (pygame.Rect(0, TOWER_H - 80, W, 90), "ground"),
+
+        # --- TIER 1: Lower Mountain Gorge & Stone Arches ---
+        # Platform 1: Lower Left Stone Ruin Arches (matches lower left arch ruin in artwork)
+        (pygame.Rect(int(W * 0.04), TOWER_H - 220, int(W * 0.34), 26), "stone"),
+        # Platform 2: Lower Right Cliff Shelf (with red maple leaves)
+        (pygame.Rect(int(W * 0.50), TOWER_H - 360, int(W * 0.42), 26), "timber"),
+        # Platform 3: Lower Wooden Suspension Rope Bridge (spans gorge between cliffs)
+        (pygame.Rect(int(W * 0.25), TOWER_H - 500, int(W * 0.32), 20), "bridge"),
+        # Platform 4: Left Mountain Cliff Terrace
+        (pygame.Rect(int(W * 0.04), TOWER_H - 650, int(W * 0.35), 26), "roof"),
+        # Platform 5: Hidden Alcove - Key 1 Ledge (Tier 1 secluded alcove on far left)
+        (pygame.Rect(int(W * 0.04), TOWER_H - 790, int(W * 0.22), 24), "stone"),
+
+        # --- TIER 2: Sacred Torii Terrace & Shrine Ruins ---
+        # Platform 6: Mid-Right Stone Arch Plateau (matching mid-right stone arch in artwork)
+        (pygame.Rect(int(W * 0.46), TOWER_H - 940, int(W * 0.46), 28), "stone"),
+        # Platform 7: Mid Suspension Rope Bridge (crossing the waterfall chasm)
+        (pygame.Rect(int(W * 0.23), TOWER_H - 1090, int(W * 0.32), 20), "bridge"),
+        # Platform 8: Grand Torii Gate Terrace on Right Cliff (Elder Musashi's Sanctuary)
+        (pygame.Rect(int(W * 0.48), TOWER_H - 1240, int(W * 0.46), 32), "torii_terrace"),
+        # Platform 9: Hidden Key 2 Ledge (Secret waterfall bracket on far right)
+        (pygame.Rect(int(W * 0.80), TOWER_H - 1390, int(W * 0.18), 24), "timber"),
+        # Platform 10: Left Colonnade / Stone Ruin Balcony
+        (pygame.Rect(int(W * 0.08), TOWER_H - 1550, int(W * 0.36), 26), "stone"),
+
+        # --- TIER 3: Upper Mountain Canopy & Pagoda Rooftops ---
+        # Platform 11: Upper Rope Suspension Bridge (spans high mountain gorge)
+        (pygame.Rect(int(W * 0.30), TOWER_H - 1710, int(W * 0.34), 20), "bridge"),
+        # Platform 12: High Right Cliff Terrace with Crimson Banners
+        (pygame.Rect(int(W * 0.54), TOWER_H - 1880, int(W * 0.38), 26), "roof"),
+        # Platform 13: Left Maple Tree Canopy Spire (huge autumn tree on left in artwork)
+        (pygame.Rect(int(W * 0.05), TOWER_H - 2050, int(W * 0.34), 26), "roof"),
+        # Platform 14: Hidden Key 3 Ledge (High mountain spire on far left)
+        (pygame.Rect(int(W * 0.04), TOWER_H - 2190, int(W * 0.20), 24), "timber"),
+        # Platform 15: Sacred Mountain Stairway Approach 1
+        (pygame.Rect(int(W * 0.56), TOWER_H - 2350, int(W * 0.32), 24), "timber"),
+        # Platform 16: Sacred Mountain Stairway Approach 2 (Torii approach)
+        (pygame.Rect(int(W * 0.40), TOWER_H - 2520, int(W * 0.32), 24), "roof"),
+
+        # --- SUMMIT: Imperial Moonlit Pagoda Sanctum Courtyard ---
+        (pygame.Rect(int(W * 0.20), summit_platform_y, int(W * 0.60), 36), "summit"),
+    ]
+
+    # 2. Wooden Ladders connecting cliff ledges (as depicted in the artwork)
+    tower_ladders = [
+        (int(W * 0.36), TOWER_H - 360, TOWER_H - 80),
+        (int(W * 0.74), TOWER_H - 500, TOWER_H - 360),
+        (int(W * 0.18), TOWER_H - 790, TOWER_H - 650),
+        (int(W * 0.76), TOWER_H - 1240, TOWER_H - 940),
+        (int(W * 0.22), TOWER_H - 1710, TOWER_H - 1550),
+        (int(W * 0.70), TOWER_H - 2350, TOWER_H - 1880),
+    ]
+
+    # 3. Corrupted Ash Sentinels (One-Shot Minions)
+    tower_minions = [
+        # Tier 1 Minions
+        {"x": int(W * 0.62), "y": TOWER_H - 360, "min_x": int(W * 0.52), "max_x": int(W * 0.88), "vx": 1.6, "alive": True, "facing_right": True},
+        {"x": int(W * 0.18), "y": TOWER_H - 650, "min_x": int(W * 0.06), "max_x": int(W * 0.36), "vx": -1.8, "alive": True, "facing_right": False},
+
+        # Tier 2 Minions
+        {"x": int(W * 0.68), "y": TOWER_H - 940, "min_x": int(W * 0.48), "max_x": int(W * 0.88), "vx": 2.0, "alive": True, "facing_right": True},
+        {"x": int(W * 0.22), "y": TOWER_H - 1550, "min_x": int(W * 0.10), "max_x": int(W * 0.40), "vx": -2.2, "alive": True, "facing_right": False},
+
+        # Tier 3 Minions
+        {"x": int(W * 0.68), "y": TOWER_H - 1880, "min_x": int(W * 0.56), "max_x": int(W * 0.88), "vx": 2.4, "alive": True, "facing_right": True},
+        {"x": int(W * 0.20), "y": TOWER_H - 2050, "min_x": int(W * 0.08), "max_x": int(W * 0.36), "vx": -2.4, "alive": True, "facing_right": False},
+        {"x": int(W * 0.54), "y": TOWER_H - 2520, "min_x": int(W * 0.42), "max_x": int(W * 0.70), "vx": 2.5, "alive": True, "facing_right": True},
+    ]
+
+    # 5. Friendly NPC: Elder Shinobi Musashi (at the Sacred Torii Terrace)
+    tower_npc = {
+        "name": "Elder Shinobi Musashi",
+        "title": "Keeper of the Ashen Record",
+        "x": int(W * 0.62),
+        "y": TOWER_H - 1240,
+        "width": 70,
+        "height": 95,
+    }
+
+    # 6. Summit Sanctum Gate
+    tower_gate = {
+        "x": int(W * 0.42),
+        "y": summit_platform_y - 180,
+        "w": int(W * 0.16),
+        "h": 180,
+    }
+
+    # 7. Ambient drifting ash motes
+    tower_ambient_particles = []
+    for _ in range(45):
+        tower_ambient_particles.append({
+            "x": random.randint(0, W),
+            "y": random.randint(0, TOWER_H),
+            "vx": random.uniform(-0.4, 0.4),
+            "vy": random.uniform(-0.9, -0.3),
+            "size": random.uniform(2.0, 4.5),
+            "alpha": random.randint(70, 180),
+        })
+
+    # 8. Autumn Momiji (Red Maple Leaves) drifting down the gorge
+    tower_momiji_leaves = []
+    for _ in range(50):
+        tower_momiji_leaves.append({
+            "x": random.randint(0, W),
+            "y": random.randint(0, TOWER_H),
+            "vx": random.uniform(-0.8, -0.2),
+            "vy": random.uniform(0.6, 1.4),
+            "size": random.randint(5, 9),
+            "color": random.choice([(195, 38, 32), (215, 58, 36), (230, 88, 42), (170, 30, 32)]),
+            "phase": random.uniform(0.0, 6.28),
+        })
+
+
+def reset_entire_game():
+    """Resets entire game back to the Pagoda Tower level entrance."""
+    global current_round, player_round_wins, boss_round_wins, player_hp_buff, player_speed_buff, game_state
+    current_round = 1
+    player_round_wins = 0
+    boss_round_wins = 0
+    player_hp_buff = 0
+    player_speed_buff = False
+    init_tower_level()
+    game_state = "TOWER"
 
 
 # ---------------------------------------------------------------------------
@@ -762,6 +993,17 @@ def draw_health_bars(surface, p, b, boss_phase, is_enraged):
 # ---------------------------------------------------------------------------
 GUIDE_SECTIONS = [
     {
+        "title": "PROLOGUE: PAGODA OF THE ASHEN PEAK",
+        "color": (212, 163, 75),
+        "lines": [
+            "  • Pagoda Ascent : Climb 3 vertical tiers across stone arches, rope bridges, and Torii terraces.",
+            "  • Ninja Double Jump : Press [W] / [UP] to jump, and press [W] in mid-air to DOUBLE JUMP! (Tower only).",
+            "  • Ash Sentinels : Corrupted guards patrol the platforms. 1 strike with Sword or Kunai slays them!",
+            "  • Elder Musashi : Hover over the hermit on the Torii Terrace (Tier II) to hear lore of Zhao & Magistrate.",
+            "  • Summit Sanctum: Reach the peak gate and press [W] or [ENTER] to face the boss!",
+        ]
+    },
+    {
         "title": "BEST OF 5 (BO5) SYSTEM & BOUNCE BACK BUFFS",
         "color": (255, 225, 120),
         "lines": [
@@ -820,28 +1062,692 @@ def draw_button(surface, rect, text, is_hover, primary_col=(130, 32, 28), border
     surface.blit(txt_surf, txt_surf.get_rect(center=rect.center))
 
 
+def update_tower_level(keys, mouse_pos, mouse_clicked):
+    global tower_camera_y, tower_intro_dismissed
+    global tower_door_msg, tower_door_timer, tower_damage_cooldown, game_state
+    global projectiles, sparks
+
+    p = player
+    player_hit_speed_mult = 1.45 if player_speed_buff else 1.20
+    player_move_speed = (BASE_MOVE_SPEED * 1.25) if player_speed_buff else BASE_MOVE_SPEED
+
+    # Atmospheric Japanese BGM for Tower
+    play_bgm("bgm_normal", vol=0.50)
+
+    if tower_door_timer > 0:
+        tower_door_timer -= 1
+    if tower_damage_cooldown > 0:
+        tower_damage_cooldown -= 1
+
+    # Intro Scroll modal dismissal
+    if not tower_intro_dismissed:
+        if keys[pygame.K_SPACE] or keys[pygame.K_RETURN] or mouse_clicked:
+            tower_intro_dismissed = True
+            play_sfx("slash_hit", 0.7)
+        return
+
+    # Kunai recharge in tower
+    if p["kunai_count"] < p["kunai_max"]:
+        p["kunai_recharge_timer"] += 1
+        if p["kunai_recharge_timer"] >= 240:
+            p["kunai_count"] += 1
+            p["kunai_recharge_timer"] = 0
+
+    # Player state updates in Tower
+    if p["state"] in ("dodge", "slash", "kunai"):
+        p["tick_count"] += 1
+
+        if p["state"] == "dodge":
+            dodge_vx = (player_move_speed * 1.6) if p["facing_right"] else (-player_move_speed * 1.6)
+            p["x"] += dodge_vx
+            if p["tick_count"] >= 1:
+                p["tick_count"] = 0
+                p["frame_idx"] += 1
+                if p["frame_idx"] >= len(tower_dodge_frames):
+                    p["state"] = "idle"
+                    p["frame_idx"] = 0
+
+        elif p["state"] == "slash":
+            prev_idx = p["frame_idx"]
+            p["anim_time"] += player_hit_speed_mult
+            new_idx = int(p["anim_time"])
+            p["frame_idx"] = new_idx
+
+            if prev_idx < 14 and new_idx >= 14:
+                play_sfx("slash_hit", 0.8)
+                # Strike 1-shot Minions (scaled to tower player size)
+                for m in tower_minions:
+                    if m["alive"] and abs(p["x"] - m["x"]) < max(48, int(W * 0.06)) and abs(p["y"] - m["y"]) < 50:
+                        facing = (m["x"] > p["x"] and p["facing_right"]) or (m["x"] < p["x"] and not p["facing_right"])
+                        if facing:
+                            m["alive"] = False
+                            play_sfx("slash_hit", 1.0)
+                            spawn_sparks(m["x"], m["y"] - 35, count=22, is_golden=False)
+
+            if p["frame_idx"] >= len(tower_slash_frames):
+                p["state"] = "idle"
+                p["frame_idx"] = 0
+                p["anim_time"] = 0.0
+
+        elif p["state"] == "kunai":
+            prev_idx = p["frame_idx"]
+            p["anim_time"] += player_hit_speed_mult
+            new_idx = int(p["anim_time"])
+            p["frame_idx"] = new_idx
+
+            if prev_idx < 15 and new_idx >= 15 and not p["kunai_spawned"]:
+                p["kunai_spawned"] = True
+                cur_k_speed = (BASE_KUNAI_SPEED * 1.25) if player_speed_buff else BASE_KUNAI_SPEED
+                k_vx = cur_k_speed if p["facing_right"] else -cur_k_speed
+                spawn_x = p["x"] + (int(tower_player_h * 0.35) if p["facing_right"] else -int(tower_player_h * 0.35))
+                spawn_y = p["y"] - int(tower_player_h * 0.45)
+                projectiles.append({
+                    "x": spawn_x,
+                    "y": spawn_y,
+                    "vx": k_vx,
+                    "type": "kunai",
+                    "owner": "player",
+                    "facing_right": p["facing_right"],
+                    "damage": 50,
+                    "active": True,
+                })
+                play_sfx("kunai_throw", 0.7)
+
+            if p["frame_idx"] >= len(tower_player_kunai_frames):
+                p["state"] = "idle"
+                p["frame_idx"] = 0
+                p["anim_time"] = 0.0
+                p["kunai_spawned"] = False
+
+    else:
+        # Movement & Actions
+        if keys[pygame.K_LSHIFT]:
+            p["state"] = "dodge"
+            p["frame_idx"] = 0
+            p["tick_count"] = 0
+        elif keys[pygame.K_RSHIFT]:
+            p["state"] = "slash"
+            p["frame_idx"] = 0
+            p["anim_time"] = 0.0
+            p["tick_count"] = 0
+        elif keys[pygame.K_q] and p["kunai_count"] > 0:
+            p["kunai_count"] -= 1
+            p["state"] = "kunai"
+            p["frame_idx"] = 0
+            p["anim_time"] = 0.0
+            p["tick_count"] = 0
+            p["kunai_spawned"] = False
+        else:
+            dx = 0
+            if keys[pygame.K_a]:
+                dx -= player_move_speed
+                p["facing_right"] = False
+            if keys[pygame.K_d]:
+                dx += player_move_speed
+                p["facing_right"] = True
+
+            if dx != 0:
+                p["state"] = "walk"
+                p["x"] += dx
+                p["tick_count"] += 1
+                if p["tick_count"] >= 1:
+                    p["tick_count"] = 0
+                    p["frame_idx"] = (p["frame_idx"] + 1) % len(tower_walk_frames)
+            else:
+                p["state"] = "idle"
+                p["blink_timer"] -= 1
+                if p["blink_timer"] <= 0:
+                    if not p["is_blinking"]:
+                        p["is_blinking"] = True
+                        p["blink_timer"] = 6
+                    else:
+                        p["is_blinking"] = False
+                        p["blink_timer"] = random.randint(120, 200)
+
+        # Jump & Double Jump (Edge-triggered for crisp air leap)
+        jump_key_down = keys[pygame.K_w] or keys[pygame.K_UP]
+        jump_just_pressed = jump_key_down and not p.get("jump_key_prev", False)
+        p["jump_key_prev"] = jump_key_down
+
+        if jump_just_pressed:
+            if p["on_ground"]:
+                p["vy"] = JUMP_FORCE
+                p["on_ground"] = False
+                p["jumps_left"] = 1
+                play_sfx("kunai_throw", 0.4)
+            elif p.get("jumps_left", 0) > 0:
+                p["vy"] = JUMP_FORCE * 0.95
+                p["jumps_left"] -= 1
+                play_sfx("heal_spell", 0.6)
+                # Golden chakra leap burst beneath feet
+                spawn_sparks(p["x"], p["y"] - 10, count=16, is_golden=True)
+
+        # Drop down through wooden platforms
+        if (keys[pygame.K_s] or keys[pygame.K_DOWN]) and p["on_ground"] and p["y"] < TOWER_H - 120:
+            p["y"] += 8
+            p["on_ground"] = False
+            p["vy"] = 2.0
+
+    # Gravity & Platform Collision
+    prev_y = p["y"]
+    if not p["on_ground"]:
+        p["vy"] += GRAVITY
+        p["y"] += p["vy"]
+
+    p["on_ground"] = False
+    if p["vy"] >= 0:
+        for plat, p_type in tower_platforms:
+            if plat.left - 20 <= p["x"] <= plat.right + 20:
+                if prev_y <= plat.top + 6 and p["y"] >= plat.top - 6:
+                    p["y"] = plat.top
+                    p["vy"] = 0.0
+                    p["on_ground"] = True
+                    p["jumps_left"] = 2       # Reset double jump on landing!
+                    break
+
+    # Ground boundary
+    if p["y"] >= TOWER_H - 80:
+        p["y"] = TOWER_H - 80
+        p["vy"] = 0.0
+        p["on_ground"] = True
+        p["jumps_left"] = 2               # Reset double jump on ground!
+
+    p["x"] = max(tower_center_offset + int(W * 0.02), min(W - tower_center_offset - int(W * 0.02), p["x"]))
+
+    # Update Sparks in Tower
+    for spk in list(sparks):
+        spk["x"] += spk["vx"]
+        spk["y"] += spk["vy"]
+        spk["vy"] += 0.28
+        spk["life"] -= 1
+        if spk["life"] <= 0:
+            sparks.remove(spk)
+
+    # Update Minions (1-Shot)
+    for m in tower_minions:
+        if m["alive"]:
+            m["x"] += m["vx"]
+            if m["x"] <= m["min_x"]:
+                m["x"] = m["min_x"]
+                m["vx"] = abs(m["vx"])
+                m["facing_right"] = True
+            elif m["x"] >= m["max_x"]:
+                m["x"] = m["max_x"]
+                m["vx"] = -abs(m["vx"])
+                m["facing_right"] = False
+
+            # Touch player damage check (scaled to tower player size)
+            if abs(p["x"] - m["x"]) < 26 and abs(p["y"] - m["y"]) < 40:
+                if p["state"] == "dodge":
+                    pass  # rolled through
+                elif tower_damage_cooldown <= 0:
+                    tower_damage_cooldown = 45
+                    p["hp"] = max(0, p["hp"] - 15)
+                    play_sfx("slash_hit", 0.7)
+                    spawn_sparks(p["x"], p["y"] - tower_player_h * 0.5, count=10, is_golden=False)
+                    if p["hp"] <= 0:
+                        # Instant respawn at tower base
+                        p["hp"] = p["max_hp"]
+                        p["x"] = int(W * 0.20)
+                        p["y"] = TOWER_H - 80
+                        p["vy"] = 0.0
+                        p["jumps_left"] = 2
+                        tower_door_msg = "★ DEFEATED BY SENTINELS — RESPAWNED AT TOWER BASE ★"
+                        tower_door_timer = 180
+
+    # Update Projectiles in Tower
+    for proj in list(projectiles):
+        proj["x"] += proj["vx"]
+        if proj["x"] < -100 or proj["x"] > W + 100:
+            proj["active"] = False
+        if proj["active"] and proj["owner"] == "player":
+            for m in tower_minions:
+                if m["alive"] and abs(proj["x"] - m["x"]) < 32 and abs(proj["y"] - (m["y"] - 30)) < 40:
+                    m["alive"] = False
+                    proj["active"] = False
+                    play_sfx("slash_hit", 0.9)
+                    spawn_sparks(m["x"], m["y"] - 35, count=18, is_golden=False)
+                    break
+        if not proj["active"]:
+            projectiles.remove(proj)
+
+    # Summit Gate Interaction (Breach Summit Sanctum - Enter Boss Fight directly)
+    gate_cx = tower_gate["x"] + tower_gate["w"] // 2
+    summit_gate_bottom = tower_gate["y"] + tower_gate["h"]
+    if abs(p["x"] - gate_cx) < int(W * 0.16) and p["y"] <= summit_gate_bottom + 15:
+        tower_door_msg = "★ PRESS [W] OR [ENTER] TO UNSEAL GATE & FACE THE HOLLOW MAGISTRATE ★"
+        tower_door_timer = 15
+        if keys[pygame.K_w] or keys[pygame.K_RETURN] or keys[pygame.K_UP]:
+            play_sfx("posture_break", 1.0)
+            spawn_sparks(gate_cx, tower_gate["y"] + 60, count=45, is_golden=True)
+            reset_full_match()
+            game_state = "PLAYING"
+
+    # Ambient particles update
+    for ap in tower_ambient_particles:
+        ap["x"] += ap["vx"]
+        ap["y"] += ap["vy"]
+        if ap["y"] < 0:
+            ap["y"] = TOWER_H
+            ap["x"] = random.randint(0, W)
+
+    # Autumn Momiji Leaves drifting down
+    for leaf in tower_momiji_leaves:
+        leaf["phase"] += 0.04
+        leaf["x"] += leaf["vx"] + math.sin(leaf["phase"]) * 0.5
+        leaf["y"] += leaf["vy"]
+        if leaf["y"] > TOWER_H:
+            leaf["y"] = 0
+            leaf["x"] = random.randint(0, W)
+        if leaf["x"] < -20:
+            leaf["x"] = W + 10
+
+    # Smooth Vertical Camera Follow
+    target_cam_y = p["y"] - H * 0.62
+    tower_camera_y += (target_cam_y - tower_camera_y) * 0.12
+    tower_camera_y = max(0.0, min(float(TOWER_H - H), tower_camera_y))
+
+
+def draw_tower_level(surface, mouse_pos):
+    global tower_camera_y, tower_door_msg, tower_door_timer
+
+    cam_y = int(tower_camera_y)
+
+    # 1. Authentic Pagoda Mountain Background (Continuous vertical scroll matching player ascent)
+    surface.blit(tower_bg, (0, -cam_y))
+
+    # 2. Ambient Drifting Embers & Ash Particles
+    for ap in tower_ambient_particles:
+        sy = int(ap["y"]) - cam_y
+        if 0 <= sy <= H:
+            ember_col = (235, 125, 45, int(ap["alpha"]))
+            e_surf = pygame.Surface((int(ap["size"] * 2), int(ap["size"] * 2)), pygame.SRCALPHA)
+            pygame.draw.circle(e_surf, ember_col, (int(ap["size"]), int(ap["size"])), int(ap["size"]))
+            surface.blit(e_surf, (int(ap["x"]), sy))
+
+    # 3. Autumn Momiji (Red Maple Leaves) drifting down the gorge
+    for leaf in tower_momiji_leaves:
+        lsy = int(leaf["y"]) - cam_y
+        if -30 <= lsy <= H + 30:
+            lx = int(leaf["x"])
+            sz = int(leaf["size"])
+            pygame.draw.circle(surface, leaf["color"], (lx, lsy), sz // 2)
+            pygame.draw.polygon(surface, leaf["color"], [
+                (lx, lsy - sz),
+                (lx + sz // 2 + 1, lsy + sz // 2),
+                (lx - sz // 2 - 1, lsy + sz // 2)
+            ])
+
+    # 4. Wooden Ladders connecting cliff ledges (as depicted in the artwork)
+    for lx, top_y, bot_y in tower_ladders:
+        s_top = top_y - cam_y
+        s_bot = bot_y - cam_y
+        if s_bot < -50 or s_top > H + 50:
+            continue
+        # Wooden side rails
+        pygame.draw.line(surface, (70, 44, 28), (lx - 12, s_top), (lx - 12, s_bot), 3)
+        pygame.draw.line(surface, (70, 44, 28), (lx + 12, s_top), (lx + 12, s_bot), 3)
+        # Rungs
+        for ry in range(top_y, bot_y, 18):
+            s_ry = ry - cam_y
+            if -10 <= s_ry <= H + 10:
+                pygame.draw.line(surface, (135, 88, 52), (lx - 12, s_ry), (lx + 12, s_ry), 2)
+
+    # 5. Pagoda & Gorge Platforms (Structured to match artwork)
+    for plat, p_type in tower_platforms:
+        sy = plat.y - cam_y
+        if sy + plat.height < -120 or sy > H + 60:
+            continue
+
+        p_rect = pygame.Rect(plat.x, sy, plat.width, plat.height)
+
+        if p_type == "ground":
+            pygame.draw.rect(surface, (26, 20, 20), p_rect)
+            pygame.draw.line(surface, (130, 32, 28), (p_rect.left, p_rect.top), (p_rect.right, p_rect.top), 4)
+            pygame.draw.line(surface, (212, 163, 75), (p_rect.left, p_rect.top + 4), (p_rect.right, p_rect.top + 4), 1)
+            # Atmospheric stone lanterns flanking the trail
+            for lx in [int(W * 0.08), int(W * 0.92)]:
+                pygame.draw.rect(surface, (55, 48, 48), pygame.Rect(lx - 14, p_rect.top - 52, 28, 52))
+                l_pulse = abs(math.sin(frame_count * 0.15 + lx))
+                pygame.draw.rect(surface, (255, int(175 + 40 * l_pulse), 60), pygame.Rect(lx - 9, p_rect.top - 42, 18, 20))
+                pygame.draw.polygon(surface, (35, 28, 28), [(lx - 20, p_rect.top - 52), (lx + 20, p_rect.top - 52), (lx, p_rect.top - 70)])
+
+        elif p_type == "stone":
+            # Ancient weathered stone arches & cliff shelves
+            pygame.draw.rect(surface, (45, 42, 48), p_rect)
+            pygame.draw.line(surface, (85, 80, 92), (p_rect.left, p_rect.top), (p_rect.right, p_rect.top), 2)
+            for bx in range(p_rect.left, p_rect.right, 36):
+                pygame.draw.line(surface, (30, 28, 32), (bx, p_rect.top), (bx, p_rect.bottom), 1)
+            for sx in range(p_rect.left + 8, p_rect.right - 8, 28):
+                pygame.draw.circle(surface, (165, 45, 35), (sx, p_rect.top + 3), 3)
+            # Pillar arch supports beneath
+            pygame.draw.rect(surface, (36, 33, 38), pygame.Rect(p_rect.left + 15, p_rect.bottom, 22, 36))
+            pygame.draw.rect(surface, (36, 33, 38), pygame.Rect(p_rect.right - 37, p_rect.bottom, 22, 36))
+
+        elif p_type == "bridge":
+            # Wooden suspension rope bridge spanning the chasm
+            pygame.draw.line(surface, (130, 85, 48), (p_rect.left, p_rect.top - 18), (p_rect.right, p_rect.top - 18), 3)
+            pygame.draw.rect(surface, (72, 45, 28), p_rect)
+            pygame.draw.line(surface, (110, 70, 40), (p_rect.left, p_rect.top), (p_rect.right, p_rect.top), 2)
+            for plank_x in range(p_rect.left, p_rect.right, 14):
+                pygame.draw.line(surface, (45, 26, 16), (plank_x, p_rect.top), (plank_x, p_rect.bottom), 1)
+                if plank_x % 28 == 0:
+                    pygame.draw.line(surface, (100, 65, 38), (plank_x, p_rect.top - 18), (plank_x, p_rect.top), 1)
+            # Bridge support posts on both ends
+            pygame.draw.rect(surface, (55, 32, 20), pygame.Rect(p_rect.left - 6, p_rect.top - 24, 10, 32))
+            pygame.draw.rect(surface, (55, 32, 20), pygame.Rect(p_rect.right - 4, p_rect.top - 24, 10, 32))
+
+        elif p_type == "torii_terrace":
+            # Sacred Torii Terrace Platform with vermilion Torii Gate
+            pygame.draw.rect(surface, (40, 36, 42), p_rect)
+            pygame.draw.line(surface, (160, 42, 38), (p_rect.left, p_rect.top), (p_rect.right, p_rect.top), 3)
+            pygame.draw.line(surface, (212, 163, 75), (p_rect.left, p_rect.top + 3), (p_rect.right, p_rect.top + 3), 1)
+            # Torii Gate
+            torii_cx = p_rect.left + int(p_rect.width * 0.38)
+            torii_h = 110
+            torii_w = 125
+            torii_top_y = p_rect.top - torii_h
+            col_w = 14
+            p_left_x = torii_cx - torii_w // 2 + 15
+            p_right_x = torii_cx + torii_w // 2 - 15 - col_w
+            # Vermilion pillars
+            pygame.draw.rect(surface, (185, 38, 32), pygame.Rect(p_left_x, torii_top_y + 12, col_w, torii_h - 12))
+            pygame.draw.rect(surface, (185, 38, 32), pygame.Rect(p_right_x, torii_top_y + 12, col_w, torii_h - 12))
+            # Black stone pillar bases (kamebara)
+            pygame.draw.rect(surface, (25, 20, 22), pygame.Rect(p_left_x - 3, p_rect.top - 12, col_w + 6, 12))
+            pygame.draw.rect(surface, (25, 20, 22), pygame.Rect(p_right_x - 3, p_rect.top - 12, col_w + 6, 12))
+            # Top curved lintel (Kasagi & Shimaki)
+            pygame.draw.rect(surface, (195, 42, 35), pygame.Rect(torii_cx - torii_w // 2, torii_top_y, torii_w, 14))
+            pygame.draw.polygon(surface, (195, 42, 35), [(torii_cx - torii_w // 2, torii_top_y), (torii_cx - torii_w // 2 - 12, torii_top_y - 8), (torii_cx - torii_w // 2, torii_top_y + 14)])
+            pygame.draw.polygon(surface, (195, 42, 35), [(torii_cx + torii_w // 2, torii_top_y), (torii_cx + torii_w // 2 + 12, torii_top_y - 8), (torii_cx + torii_w // 2, torii_top_y + 14)])
+            # Tie beam (Nuki)
+            pygame.draw.rect(surface, (170, 32, 28), pygame.Rect(p_left_x - 10, torii_top_y + 30, (p_right_x + col_w + 10) - (p_left_x - 10), 9))
+            # Gold tablet (Gakuzuka)
+            pygame.draw.rect(surface, (212, 163, 75), pygame.Rect(torii_cx - 8, torii_top_y + 14, 16, 16))
+            # Shimenawa sacred rope
+            pygame.draw.line(surface, (230, 205, 140), (p_left_x + col_w, torii_top_y + 38), (p_right_x, torii_top_y + 38), 2)
+
+        elif p_type == "timber":
+            pygame.draw.rect(surface, (36, 24, 20), p_rect)
+            pygame.draw.rect(surface, (135, 34, 30), p_rect, 2)
+            pygame.draw.rect(surface, (212, 163, 75), pygame.Rect(p_rect.left, p_rect.top, 14, p_rect.height))
+            pygame.draw.rect(surface, (212, 163, 75), pygame.Rect(p_rect.right - 14, p_rect.top, 14, p_rect.height))
+
+        elif p_type == "roof":
+            pygame.draw.rect(surface, (24, 18, 24), p_rect)
+            pygame.draw.line(surface, (140, 34, 30), (p_rect.left, p_rect.top), (p_rect.right, p_rect.top), 3)
+            pygame.draw.polygon(surface, (212, 163, 75), [(p_rect.left, p_rect.top), (p_rect.left - 15, p_rect.top - 12), (p_rect.left + 8, p_rect.top)])
+            pygame.draw.polygon(surface, (212, 163, 75), [(p_rect.right, p_rect.top), (p_rect.right + 15, p_rect.top - 12), (p_rect.right - 8, p_rect.top)])
+
+        elif p_type == "summit":
+            draw_feudal_panel(surface, p_rect, border_col=(212, 163, 75), bg_col=(32, 14, 14, 240), gold_corners=True)
+
+    # 6. Summit Sanctum Gate
+    gate_sy = tower_gate["y"] - cam_y
+    if -200 <= gate_sy <= H + 100:
+        gate_rect = pygame.Rect(tower_gate["x"], gate_sy, tower_gate["w"], tower_gate["h"])
+        pygame.draw.rect(surface, (30, 10, 10), gate_rect)
+        pygame.draw.rect(surface, (140, 32, 28), gate_rect, 4)
+        pygame.draw.rect(surface, (160, 35, 30), pygame.Rect(gate_rect.left - 20, gate_rect.top - 18, gate_rect.width + 40, 22))
+        pygame.draw.polygon(surface, (212, 163, 75), [(gate_rect.left - 24, gate_rect.top - 18), (gate_rect.left - 34, gate_rect.top - 30), (gate_rect.left - 6, gate_rect.top - 18)])
+        pygame.draw.polygon(surface, (212, 163, 75), [(gate_rect.right + 24, gate_rect.top - 18), (gate_rect.right + 34, gate_rect.top - 30), (gate_rect.right + 6, gate_rect.top - 18)])
+
+        # Feudal Gate Crest
+        gc_x = gate_rect.centerx
+        gc_y = gate_rect.centery
+        pygame.draw.circle(surface, (20, 10, 10), (gc_x, gc_y), 22)
+        pygame.draw.circle(surface, (212, 163, 75), (gc_x, gc_y), 22, 2)
+        pygame.draw.circle(surface, (160, 32, 28), (gc_x, gc_y), 15, 2)
+        pygame.draw.polygon(surface, (255, 220, 100), [(gc_x, gc_y - 9), (gc_x + 9, gc_y), (gc_x, gc_y + 9), (gc_x - 9, gc_y)])
+
+        g_txt = "SUMMIT SANCTUM"
+        g_surf = font_bar_val.render(g_txt, True, (240, 220, 190))
+        surface.blit(g_surf, g_surf.get_rect(center=(gate_rect.centerx, gate_rect.top - 8)))
+
+    # 7. Friendly NPC: Elder Shinobi Musashi (at the Sacred Torii Terrace)
+    npc_sy = tower_npc["y"] - cam_y
+    if -100 <= npc_sy <= H + 100:
+        nx = tower_npc["x"]
+        ny = npc_sy
+
+        # Stone Pagoda Lantern beside NPC
+        lx = nx + 48
+        pygame.draw.rect(surface, (55, 48, 48), pygame.Rect(lx - 10, ny - 50, 20, 50))
+        l_pulse = abs(math.sin(frame_count * 0.15))
+        lantern_col = (255, int(170 + 40 * l_pulse), 50)
+        pygame.draw.rect(surface, lantern_col, pygame.Rect(lx - 7, ny - 42, 14, 18))
+        pygame.draw.polygon(surface, (35, 28, 28), [(lx - 15, ny - 50), (lx + 15, ny - 50), (lx, ny - 65)])
+        halo_surf = pygame.Surface((80, 80), pygame.SRCALPHA)
+        pygame.draw.circle(halo_surf, (255, 180, 60, int(35 + 20 * l_pulse)), (40, 40), 38)
+        surface.blit(halo_surf, (lx - 40, ny - 70))
+
+        # Elder Musashi Sprite
+        pygame.draw.polygon(surface, (42, 45, 58), [(nx - 18, ny), (nx + 18, ny), (nx + 10, ny - 55), (nx - 10, ny - 55)])
+        pygame.draw.line(surface, (212, 163, 75), (nx - 12, ny - 30), (nx + 12, ny - 30), 3)
+        pygame.draw.circle(surface, (215, 185, 160), (nx, ny - 62), 11)
+        pygame.draw.polygon(surface, (140, 110, 65), [(nx - 28, ny - 68), (nx + 28, ny - 68), (nx, ny - 84)])
+        pygame.draw.line(surface, (90, 70, 40), (nx - 28, ny - 68), (nx + 28, ny - 68), 2)
+        pygame.draw.line(surface, (135, 90, 50), (nx - 18, ny), (nx - 18, ny - 80), 3)
+        pygame.draw.circle(surface, (212, 163, 75), (nx - 18, ny - 80), 5, 2)
+
+        npc_lbl = font_hud_info.render("[ELDER MUSASHI — HOVER TO LISTEN]", True, (255, 225, 130))
+        surface.blit(npc_lbl, npc_lbl.get_rect(center=(nx, ny - 98)))
+
+    # 8. One-Shot Minions (Corrupted Ash Sentinels)
+    for m in tower_minions:
+        if m["alive"]:
+            msy = m["y"] - cam_y
+            if -80 <= msy <= H + 80:
+                mx = int(m["x"])
+                my = int(msy)
+                facing = m["facing_right"]
+
+                pygame.draw.polygon(surface, (22, 16, 20), [(mx - 14, my), (mx + 14, my), (mx + 8, my - 44), (mx - 8, my - 44)])
+                scarf_dx = -16 if facing else 16
+                pygame.draw.line(surface, (180, 28, 28), (mx, my - 38), (mx + scarf_dx, my - 42), 3)
+                pygame.draw.line(surface, (180, 28, 28), (mx + scarf_dx, my - 42), (mx + scarf_dx * 1.4, my - 36), 2)
+                pygame.draw.circle(surface, (30, 22, 26), (mx, my - 50), 10)
+                eye_dx = 3 if facing else -3
+                pygame.draw.circle(surface, (255, 35, 35), (mx + eye_dx, my - 51), 3)
+                pygame.draw.circle(surface, (255, 220, 220), (mx + eye_dx, my - 51), 1)
+                k_tip_x = mx + (22 if facing else -22)
+                pygame.draw.line(surface, (200, 205, 210), (mx, my - 25), (k_tip_x, my - 28), 2)
+
+    # 9. Render Projectiles in Tower (Scaled down for pagoda phase)
+    for proj in projectiles:
+        psy = int(proj["y"]) - cam_y
+        if -50 <= psy <= H + 50:
+            if proj["type"] == "kunai":
+                k_img = tower_kunai_item_right if proj["facing_right"] else tower_kunai_item_left
+                surface.blit(k_img, (int(proj["x"] - k_img.get_width() // 2), psy - k_img.get_height() // 2))
+
+    # 10. Render Sparks in Tower
+    for spk in sparks:
+        col = spk.get("color", (255, 220, 100))
+        if isinstance(col, (tuple, list)) and len(col) >= 3 and isinstance(col[0], (int, float)):
+            safe_col = (max(0, min(255, int(col[0]))), max(0, min(255, int(col[1]))), max(0, min(255, int(col[2]))))
+        else:
+            safe_col = (255, 220, 100)
+        sz = max(1, int(spk.get("size", 2)))
+        spk_sy = int(spk["y"]) - cam_y
+        if -10 <= spk_sy <= H + 10:
+            pygame.draw.circle(surface, safe_col, (int(spk["x"]), spk_sy), sz)
+
+    # 11. Render Player (General Zhao - Scaled down by 70% during Pagoda phase)
+    p = player
+    if p["state"] == "heal":
+        p_sprite = tower_player_heal_frames[p["frame_idx"] % len(tower_player_heal_frames)]
+        p_draw_x = int(p["x"] - tower_pheal_center_offset)
+        p_draw_y = int(p["y"] - tower_pheal_feet_offset) - cam_y
+    elif p["state"] == "idle":
+        p_sprite = tower_idle_blink if p["is_blinking"] else tower_idle_open
+        p_draw_x = int(p["x"] - tower_center_offset)
+        p_draw_y = int(p["y"] - tower_feet_offset) - cam_y
+    elif p["state"] == "walk":
+        p_sprite = tower_walk_frames[p["frame_idx"]]
+        p_draw_x = int(p["x"] - tower_center_offset)
+        p_draw_y = int(p["y"] - tower_feet_offset) - cam_y
+    elif p["state"] == "dodge":
+        p_sprite = tower_dodge_frames[p["frame_idx"]]
+        p_draw_x = int(p["x"] - tower_center_offset)
+        p_draw_y = int(p["y"] - tower_feet_offset) - cam_y
+    elif p["state"] == "slash":
+        p_sprite = tower_slash_frames[p["frame_idx"]]
+        p_draw_x = int(p["x"] - tower_center_offset)
+        p_draw_y = int(p["y"] - tower_feet_offset) - cam_y
+    elif p["state"] == "kunai":
+        p_sprite = tower_player_kunai_frames[p["frame_idx"]]
+        p_draw_x = int(p["x"] - tower_pk_center_offset)
+        p_draw_y = int(p["y"] - tower_pk_feet_offset) - cam_y
+    elif p["state"] == "parry":
+        p_sprite = tower_parry_frames[p["frame_idx"]]
+        p_draw_x = int(p["x"] - tower_center_offset)
+        p_draw_y = int(p["y"] - tower_feet_offset) - cam_y
+    else:
+        p_sprite = tower_idle_open
+        p_draw_x = int(p["x"] - tower_center_offset)
+        p_draw_y = int(p["y"] - tower_feet_offset) - cam_y
+
+    if not p["facing_right"]:
+        p_sprite = pygame.transform.flip(p_sprite, True, False)
+
+    if tower_damage_cooldown > 0 and (tower_damage_cooldown // 3) % 2 == 1:
+        pass
+    else:
+        surface.blit(p_sprite, (p_draw_x, p_draw_y))
+
+    # 13. Tower HUD (Health, Double Jump readiness, Keys, Current Tier)
+    hud_y = int(H * 0.04)
+    p_bar_w = int(W * 0.22)
+    p_bar_h = int(H * 0.024)
+    p_pct = max(0.0, min(1.0, p["hp"] / p["max_hp"]))
+    draw_feudal_panel(surface, pygame.Rect(int(W * 0.05), hud_y, p_bar_w, p_bar_h), border_col=(120, 30, 25), bg_col=(18, 12, 10, 220))
+    if p_pct > 0:
+        pygame.draw.rect(surface, (190, 32, 28), pygame.Rect(int(W * 0.05) + 3, hud_y + 3, int((p_bar_w - 6) * p_pct), p_bar_h - 6))
+    hp_txt = font_bar_val.render(f"ZHAO: {p['hp']}/{p['max_hp']} HP", True, (255, 245, 230))
+    surface.blit(hp_txt, (int(W * 0.05) + 8, hud_y + (p_bar_h - hp_txt.get_height()) // 2))
+
+    # Double Jump Readiness indicator
+    dj_left = p.get("jumps_left", 2)
+    dj_text = "DOUBLE JUMP: READY [W IN AIR]" if dj_left >= 2 else ("DOUBLE JUMP: AVAILABLE" if dj_left == 1 else "DOUBLE JUMP: USED")
+    dj_col = (110, 240, 150) if dj_left >= 1 else (175, 160, 150)
+    dj_surf = font_bar_val.render(dj_text, True, dj_col)
+    surface.blit(dj_surf, (int(W * 0.05), hud_y + p_bar_h + 4))
+
+    k_surf = font_tower_hud.render("PAGODA OF THE ASHEN PEAK  •  ASCENT TO THE SUMMIT", True, (255, 220, 95))
+    surface.blit(k_surf, k_surf.get_rect(center=(W // 2, hud_y + p_bar_h // 2)))
+
+    if p["y"] > TOWER_H - 900:
+        tier_str = "TIER I : LOWER GORGE & STONE ARCHES"
+    elif p["y"] > TOWER_H - 1700:
+        tier_str = "TIER II : TORII TERRACE & SHRINES"
+    elif p["y"] > TOWER_H - 2500:
+        tier_str = "TIER III : MAPLE CANOPY & ROOFTOPS"
+    else:
+        tier_str = "SUMMIT : PAGODA SANCTUM GATE"
+    tier_surf = font_hud_info.render(tier_str, True, (212, 163, 75))
+    surface.blit(tier_surf, (W - int(W * 0.05) - tier_surf.get_width(), hud_y + (p_bar_h - tier_surf.get_height()) // 2))
+
+    # 13. Floating Door Banner Notification
+    if tower_door_timer > 0 and tower_door_msg:
+        box_w = int(W * 0.62)
+        box_h = int(H * 0.048)
+        b_rect = pygame.Rect((W - box_w) // 2, int(H * 0.12), box_w, box_h)
+        draw_feudal_panel(surface, b_rect, border_col=(212, 163, 75), bg_col=(22, 12, 10, 240), gold_corners=True)
+        m_surf = font_bar_val.render(tower_door_msg, True, (255, 235, 130))
+        surface.blit(m_surf, m_surf.get_rect(center=b_rect.center))
+
+    # 14. Friendly NPC Hover Dialogue Box (Lore between Zhao & Magistrate)
+    npc_screen_x = tower_npc["x"]
+    npc_screen_y = tower_npc["y"] - cam_y
+    npc_rect = pygame.Rect(npc_screen_x - 45, npc_screen_y - 95, 90, 105)
+
+    if npc_rect.collidepoint(mouse_pos) or (abs(p["x"] - npc_screen_x) < 70 and abs(p["y"] - tower_npc["y"]) < 60):
+        diag_w = int(W * 0.76)
+        diag_h = int(H * 0.30)
+        d_rect = pygame.Rect((W - diag_w) // 2, int(H * 0.66), diag_w, diag_h)
+        draw_feudal_panel(surface, d_rect, border_col=(212, 163, 75), bg_col=(18, 12, 12, 250), gold_corners=True)
+
+        spk_surf = font_dialogue_name.render("ELDER SHINOBI MUSASHI  •  KEEPER OF THE ASHEN RECORD", True, (255, 215, 80))
+        surface.blit(spk_surf, (d_rect.x + 24, d_rect.y + 16))
+        pygame.draw.line(surface, (140, 32, 28), (d_rect.x + 20, d_rect.y + 45), (d_rect.right - 20, d_rect.y + 45), 2)
+
+        lore_lines = [
+            "\"Ah, General Zhao... you have reached the Pagoda at last. Do you remember when you and the Magistrate trained",
+            "together under the same moonlight as sworn brothers? Centuries ago, he was the greatest swordmaster of our realm.",
+            "When war devastated the peak, he unearthed the cursed Ashen Blade beneath the mountain, seeking absolute power.",
+            "The blade granted him titanic might, but hollowed his soul into an immortal monster. He no longer remembers his humanity.",
+            "Only your blade can grant his tortured spirit eternal peace. Ascend through these mountain rafters to the",
+            "Summit Sanctum, and finish what destiny began.\""
+        ]
+        curr_dy = d_rect.y + 55
+        for ll in lore_lines:
+            ll_surf = font_dialogue_body.render(ll, True, (240, 230, 210))
+            surface.blit(ll_surf, (d_rect.x + 24, curr_dy))
+            curr_dy += int(H * 0.026)
+
+    # 15. Concept Explanation Modal (Shown at start until dismissed)
+    if not tower_intro_dismissed:
+        overlay = pygame.Surface((W, H), pygame.SRCALPHA)
+        overlay.fill((12, 8, 8, 225))
+        surface.blit(overlay, (0, 0))
+
+        modal_w = int(W * 0.68)
+        modal_h = int(H * 0.66)
+        m_rect = pygame.Rect((W - modal_w) // 2, (H - modal_h) // 2, modal_w, modal_h)
+        draw_feudal_panel(surface, m_rect, border_col=(212, 163, 75), bg_col=(20, 14, 12, 250), gold_corners=True)
+
+        t_title = font_tower_title.render("PAGODA OF THE ASHEN PEAK", True, (255, 220, 95))
+        t_sub = font_sub.render("Prologue Ascent to The Hollow Magistrate", True, (212, 163, 75))
+        surface.blit(t_title, t_title.get_rect(center=(W // 2, m_rect.y + int(H * 0.07))))
+        surface.blit(t_sub, t_sub.get_rect(center=(W // 2, m_rect.y + int(H * 0.13))))
+        pygame.draw.line(surface, (140, 32, 28), (m_rect.x + 40, m_rect.y + int(H * 0.17)), (m_rect.right - 40, m_rect.y + int(H * 0.17)), 2)
+
+        instr = [
+            ("1. Ascend the Mountain Pagoda", "Climb 3 vertical tiers across stone arches, rope bridges, and Torii terraces using [A]/[D] to run."),
+            ("2. Ninja Double Jump", "Press [W] or [UP] to jump, and press [W] AGAIN in mid-air to DOUBLE JUMP! (Tower only)."),
+            ("3. Slay Corrupted Ash Sentinels", "Guards patrol the platforms. 1 strike with Sword [Right Shift] or Kunai [Q] vanquishes them!"),
+            ("4. Elder Musashi's Lore", "Visit Elder Musashi at the Torii Terrace on Tier II (hover with mouse) to discover the Magistrate's past."),
+            ("5. Breach the Summit Sanctum", "Reach the moonlit peak to enter the gate and face the Hollow Magistrate!"),
+        ]
+        iy = m_rect.y + int(H * 0.20)
+        for head, body in instr:
+            h_s = font_bar_name.render(head, True, (255, 215, 80))
+            b_s = font_guide_text.render(body, True, (230, 220, 205))
+            surface.blit(h_s, (m_rect.x + 45, iy))
+            surface.blit(b_s, (m_rect.x + 45, iy + int(H * 0.030)))
+            iy += int(H * 0.072)
+
+        start_btn = pygame.Rect(m_rect.centerx - int(W * 0.18), m_rect.bottom - int(H * 0.085), int(W * 0.36), int(H * 0.055))
+        draw_button(surface, start_btn, "BEGIN ASCENT [PRESS SPACE]", start_btn.collidepoint(mouse_pos), primary_col=(140, 32, 28))
+
+
 # ---------------------------------------------------------------------------
 # Main Game Loop State
 # ---------------------------------------------------------------------------
-game_state = "MENU"   # "MENU", "CONTROLS", "PLAYING", "ROUND_WON", "BOUNCE_BACK", "FINAL_BOUNCE_BACK", "MATCH_VICTORY", "MATCH_DEFEAT"
+game_state = "MENU"   # "MENU", "CONTROLS", "TOWER", "PLAYING", "ROUND_WON", "BOUNCE_BACK", "FINAL_BOUNCE_BACK", "MATCH_VICTORY", "MATCH_DEFEAT"
+previous_game_state = "PLAYING"
 scroll_y = 0
 frame_count = 0
 running = True
 
-btn_w = int(W * 0.28)
-btn_h = int(H * 0.060)
+btn_w = int(W * 0.34)
+btn_h = int(H * 0.052)
 btn_x = (W - btn_w) // 2
 
-btn_start_rect = pygame.Rect(btn_x, int(H * 0.52), btn_w, btn_h)
+# Main Menu Buttons
+btn_start_rect = pygame.Rect(btn_x, int(H * 0.48), btn_w, btn_h)
+btn_boss_rect = pygame.Rect(btn_x, int(H * 0.55), btn_w, btn_h)
 btn_guide_rect = pygame.Rect(btn_x, int(H * 0.62), btn_w, btn_h)
-btn_exit_rect = pygame.Rect(btn_x, int(H * 0.72), btn_w, btn_h)
+btn_exit_rect = pygame.Rect(btn_x, int(H * 0.69), btn_w, btn_h)
 
 btn_back_rect = pygame.Rect(int(W * 0.05), int(H * 0.90), int(W * 0.16), int(H * 0.055))
 
-# Round End Buttons (3 Options: Continue / Reset / Menu)
-btn_continue_rect = pygame.Rect(btn_x, int(H * 0.52), btn_w, btn_h)
-btn_reset_rect = pygame.Rect(btn_x, int(H * 0.61), btn_w, btn_h)
-btn_menu_rect = pygame.Rect(btn_x, int(H * 0.70), btn_w, btn_h)
+# Round End & Pause Buttons
+btn_continue_rect = pygame.Rect(btn_x, int(H * 0.48), btn_w, btn_h)
+btn_restart_boss_rect = pygame.Rect(btn_x, int(H * 0.55), btn_w, btn_h)
+btn_restart_game_rect = pygame.Rect(btn_x, int(H * 0.62), btn_w, btn_h)
+btn_menu_rect = pygame.Rect(btn_x, int(H * 0.69), btn_w, btn_h)
 
 
 # ---------------------------------------------------------------------------
@@ -858,17 +1764,26 @@ while running:
             running = False
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
-                if game_state in ("PLAYING", "CONTROLS", "ROUND_WON", "BOUNCE_BACK", "FINAL_BOUNCE_BACK", "MATCH_VICTORY", "MATCH_DEFEAT"):
-                    reset_full_match()
+                if game_state in ("TOWER", "PLAYING", "ROUND_WON", "BOUNCE_BACK", "FINAL_BOUNCE_BACK", "MATCH_VICTORY", "MATCH_DEFEAT"):
                     game_state = "MENU"
+                elif game_state == "CONTROLS":
+                    game_state = previous_game_state
                 elif game_state == "MENU":
                     running = False
 
             if event.key == pygame.K_SPACE:
                 if game_state == "PLAYING":
+                    previous_game_state = "PLAYING"
                     game_state = "CONTROLS"
+                elif game_state == "TOWER":
+                    if not tower_intro_dismissed:
+                        tower_intro_dismissed = True
+                        play_sfx("slash_hit", 0.7)
+                    else:
+                        previous_game_state = "TOWER"
+                        game_state = "CONTROLS"
                 elif game_state == "CONTROLS":
-                    game_state = "PLAYING"
+                    game_state = previous_game_state
                 elif game_state in ("ROUND_WON", "BOUNCE_BACK", "FINAL_BOUNCE_BACK"):
                     start_next_round()
                 elif game_state in ("MATCH_VICTORY", "MATCH_DEFEAT"):
@@ -881,8 +1796,12 @@ while running:
                     reset_full_match()
 
             if event.key == pygame.K_r:
-                if game_state in ("ROUND_WON", "BOUNCE_BACK", "FINAL_BOUNCE_BACK", "MATCH_VICTORY", "MATCH_DEFEAT"):
+                if game_state in ("ROUND_WON", "BOUNCE_BACK", "FINAL_BOUNCE_BACK", "MATCH_VICTORY", "MATCH_DEFEAT", "CONTROLS"):
                     reset_full_match()
+
+            if event.key == pygame.K_g:
+                if game_state in ("ROUND_WON", "BOUNCE_BACK", "FINAL_BOUNCE_BACK", "MATCH_VICTORY", "MATCH_DEFEAT", "CONTROLS", "TOWER"):
+                    reset_entire_game()
 
             # The ONLY remaining testing key: [T] Deletes 200 HP from the boss
             if game_state == "PLAYING":
@@ -914,24 +1833,27 @@ while running:
         # Title Emblem
         t_surf = font_title.render("SHINOBI : LEGEND OF ZHAO", True, (245, 225, 185))
         t_shadow = font_title.render("SHINOBI : LEGEND OF ZHAO", True, (20, 8, 8))
-        t_rect = t_surf.get_rect(center=(W // 2, int(H * 0.24)))
+        t_rect = t_surf.get_rect(center=(W // 2, int(H * 0.22)))
         screen.blit(t_shadow, (t_rect.x + 3, t_rect.y + 3))
         screen.blit(t_surf, t_rect)
 
-        sub_surf = font_sub.render("Best of 5 Combat  •  The Hollow Magistrate Boss Encounter", True, (212, 163, 75))
-        screen.blit(sub_surf, sub_surf.get_rect(center=(W // 2, int(H * 0.32))))
+        sub_surf = font_sub.render("Pagoda Tower Descent  •  Best of 5 Hollow Magistrate Encounter", True, (212, 163, 75))
+        screen.blit(sub_surf, sub_surf.get_rect(center=(W // 2, int(H * 0.30))))
 
-        draw_crossed_swords(screen, W // 2, int(H * 0.41), radius=int(H * 0.045))
+        draw_crossed_swords(screen, W // 2, int(H * 0.39), radius=int(H * 0.040))
 
-        draw_button(screen, btn_start_rect, "START BEST-OF-5 MATCH", btn_start_rect.collidepoint(mouse_pos), primary_col=(140, 32, 28))
+        draw_button(screen, btn_start_rect, "ENTER PAGODA (START GAME)", btn_start_rect.collidepoint(mouse_pos), primary_col=(140, 32, 28))
+        draw_button(screen, btn_boss_rect, "PRACTICE BOSS FIGHT (DIRECT)", btn_boss_rect.collidepoint(mouse_pos), primary_col=(115, 38, 25))
         draw_button(screen, btn_guide_rect, "COMBAT GUIDE & CONTROLS", btn_guide_rect.collidepoint(mouse_pos), primary_col=(35, 30, 28))
         draw_button(screen, btn_exit_rect, "EXIT TO DESKTOP", btn_exit_rect.collidepoint(mouse_pos), primary_col=(35, 30, 28))
 
         if mouse_clicked:
             if btn_start_rect.collidepoint(mouse_pos):
+                reset_entire_game()
+            elif btn_boss_rect.collidepoint(mouse_pos):
                 reset_full_match()
-                game_state = "PLAYING"
             elif btn_guide_rect.collidepoint(mouse_pos):
+                previous_game_state = "MENU"
                 game_state = "CONTROLS"
                 scroll_y = 0
             elif btn_exit_rect.collidepoint(mouse_pos):
@@ -946,17 +1868,17 @@ while running:
         dim.fill((16, 12, 10, 225))
         screen.blit(dim, (0, 0))
 
-        content_box = pygame.Rect(int(W * 0.08), int(H * 0.06), int(W * 0.84), int(H * 0.80))
+        content_box = pygame.Rect(int(W * 0.08), int(H * 0.05), int(W * 0.84), int(H * 0.82))
         draw_feudal_panel(screen, content_box, border_col=(140, 32, 28), bg_col=(20, 14, 12, 240))
 
         g_title = font_guide_head.render("HAVEN HACKATHON — SHINOBI COMBAT MANUAL", True, (245, 225, 185))
-        screen.blit(g_title, g_title.get_rect(center=(W // 2, int(H * 0.12))))
-        pygame.draw.line(screen, (212, 163, 75), (int(W * 0.15), int(H * 0.16)), (int(W * 0.85), int(H * 0.16)), 2)
+        screen.blit(g_title, g_title.get_rect(center=(W // 2, int(H * 0.10))))
+        pygame.draw.line(screen, (212, 163, 75), (int(W * 0.15), int(H * 0.14)), (int(W * 0.85), int(H * 0.14)), 2)
 
-        clip_area = pygame.Rect(int(W * 0.10), int(H * 0.18), int(W * 0.80), int(H * 0.65))
+        clip_area = pygame.Rect(int(W * 0.10), int(H * 0.16), int(W * 0.80), int(H * 0.69))
         screen.set_clip(clip_area)
 
-        curr_y = int(H * 0.19) + scroll_y
+        curr_y = int(H * 0.17) + scroll_y
         for sec in GUIDE_SECTIONS:
             sec_surf = font_guide_sec.render(sec["title"], True, sec["color"])
             screen.blit(sec_surf, (int(W * 0.12), curr_y))
@@ -970,12 +1892,37 @@ while running:
 
         screen.set_clip(None)
 
-        draw_button(screen, btn_back_rect, "< RETURN", btn_back_rect.collidepoint(mouse_pos), primary_col=(130, 32, 28))
-        hint_surf = font_bar_val.render("Use Mouse Wheel to Scroll  |  Press [SPACE] or [ESC] to Return", True, (190, 175, 150))
-        screen.blit(hint_surf, hint_surf.get_rect(center=(W // 2, int(H * 0.93))))
+        # Bottom Action Bar in Controls
+        ctrl_w = int(W * 0.20)
+        ctrl_h = int(H * 0.052)
+        btn_c_resume = pygame.Rect(int(W * 0.08), int(H * 0.89), ctrl_w, ctrl_h)
+        btn_c_boss = pygame.Rect(int(W * 0.31), int(H * 0.89), ctrl_w, ctrl_h)
+        btn_c_game = pygame.Rect(int(W * 0.54), int(H * 0.89), ctrl_w, ctrl_h)
+        btn_c_menu = pygame.Rect(int(W * 0.77), int(H * 0.89), int(W * 0.15), ctrl_h)
 
-        if mouse_clicked and btn_back_rect.collidepoint(mouse_pos):
-            game_state = "PLAYING" if player["hp"] > 0 else "MENU"
+        draw_button(screen, btn_c_resume, "< RESUME [SPACE]", btn_c_resume.collidepoint(mouse_pos), primary_col=(35, 120, 50))
+        draw_button(screen, btn_c_boss, "RESTART BOSS [R]", btn_c_boss.collidepoint(mouse_pos), primary_col=(140, 32, 28))
+        draw_button(screen, btn_c_game, "RESTART GAME [G]", btn_c_game.collidepoint(mouse_pos), primary_col=(95, 30, 26))
+        draw_button(screen, btn_c_menu, "MENU [ESC]", btn_c_menu.collidepoint(mouse_pos), primary_col=(35, 30, 28))
+
+        if mouse_clicked:
+            if btn_c_resume.collidepoint(mouse_pos):
+                game_state = previous_game_state
+            elif btn_c_boss.collidepoint(mouse_pos):
+                reset_full_match()
+            elif btn_c_game.collidepoint(mouse_pos):
+                reset_entire_game()
+            elif btn_c_menu.collidepoint(mouse_pos):
+                reset_entire_game()
+                game_state = "MENU"
+
+    # -----------------------------------------------------------------------
+    # 2b. State: TOWER (Vertical Platformer Tower Level)
+    # -----------------------------------------------------------------------
+    elif game_state == "TOWER":
+        keys = pygame.key.get_pressed()
+        update_tower_level(keys, mouse_pos, mouse_clicked)
+        draw_tower_level(screen, mouse_pos)
 
     # -----------------------------------------------------------------------
     # 3. State: PLAYING
@@ -986,8 +1933,8 @@ while running:
         keys = pygame.key.get_pressed()
 
         # Phase Calculation
-        is_enraged = (b["hp"] <= b["max_hp"] * 0.10)
-        if is_enraged or b["hp"] <= b["max_hp"] * 0.33:
+        is_enraged = (b["hp"] <= b["max_hp"] * 0.33)  # Phase 3 is Enraged Mode!
+        if is_enraged:
             boss_phase = 3
         elif b["hp"] <= b["max_hp"] * 0.66:
             boss_phase = 2
@@ -1000,7 +1947,7 @@ while running:
         else:
             play_bgm("bgm_normal", vol=0.65)
 
-        # Enraged Mode Transition (5.5s dark roar sequence)
+        # Enraged Mode Transition (5.5s dark roar sequence with 100% invulnerability)
         if is_enraged and not b["enraged_triggered"]:
             b["enraged_triggered"] = True
             b["state"] = "enrage_intro"
@@ -1392,10 +2339,10 @@ while running:
                         b["projectile_spawned"] = False
 
         elif b["state"] == "ascend":
-            # 1.0 second ascent (60 ticks) - boss is invulnerable!
+            # 1.5x Faster Ascent (40 ticks = ~0.67s) - boss is invulnerable!
             b["vx"] = 0.0
             b["slam_timer"] -= 1
-            progress = (60 - b["slam_timer"]) / 60.0
+            progress = (40 - b["slam_timer"]) / 40.0
             b["frame_idx"] = min(len(boss_ascent_frames) - 1, int(progress * len(boss_ascent_frames)))
 
             # Boss leaps upward into the heavens
@@ -1404,7 +2351,7 @@ while running:
 
             if b["slam_timer"] <= 0:
                 b["state"] = "airborne"
-                b["slam_timer"] = 90  # 1.5 seconds in air (indicator appears 1.0s before descent)
+                b["slam_timer"] = 60  # 1.0 second in air (red indicator appears 1.0s before descent!)
                 b["y"] = -400
                 # Randomize landing location near player
                 offset = random.choice([-1, 1]) * random.randint(30, int(W * 0.16))
@@ -1416,7 +2363,7 @@ while running:
             b["slam_timer"] -= 1
             if b["slam_timer"] <= 0:
                 b["state"] = "descend"
-                b["slam_timer"] = 60  # 1.0 second descent
+                b["slam_timer"] = 40  # 1.5x Faster Descent (40 ticks = ~0.67s)
                 b["frame_idx"] = 0
                 b["x"] = b["slam_target_x"]
                 b["y"] = GROUND_Y
@@ -1424,11 +2371,11 @@ while running:
                 b["facing_right"] = (p["x"] > b["x"])
 
         elif b["state"] == "descend":
-            # 1.0 second descent (60 ticks) - boss is invulnerable!
+            # 1.5x Faster Descent (40 ticks = ~0.67s) - boss is invulnerable!
             b["vx"] = 0.0
             b["y"] = GROUND_Y
             b["slam_timer"] -= 1
-            progress = (60 - b["slam_timer"]) / 60.0
+            progress = (40 - b["slam_timer"]) / 40.0
             b["frame_idx"] = min(len(boss_descent_frames) - 1, int(progress * len(boss_descent_frames)))
 
             # Descent crash impact happens around frame 17-20 (progress >= 0.58)
@@ -1494,7 +2441,7 @@ while running:
                     b["tick_count"] = 0
                     b["projectile_spawned"] = False
                     if chosen_atk == "ascend":
-                        b["slam_timer"] = 60
+                        b["slam_timer"] = 40
                 else:
                     # In melee: Greatsword Smash, Kunai, or Sky Leap (Aerial Slam)
                     chosen_atk = random.choices(["smash", "kunai", "ascend"], weights=[0.45, 0.25, 0.30])[0]
@@ -1504,7 +2451,7 @@ while running:
                     b["projectile_spawned"] = False
                     b["smash_hit"] = False
                     if chosen_atk == "ascend":
-                        b["slam_timer"] = 60
+                        b["slam_timer"] = 40
 
             else:
                 # Fluid Patrol & Motion Smoothing
@@ -1758,6 +2705,21 @@ while running:
 
             screen.blit(b_sprite, (b_draw_x, b_draw_y))
 
+        if b["state"] == "enrage_intro":
+            # Dark Roar Invincibility Barrier Aura & Banner
+            e_pulse = abs(math.sin(frame_count * 0.35))
+            barrier_rad = int(boss_h * 0.68 + 10 * e_pulse)
+            b_surf = pygame.Surface((barrier_rad * 2 + 12, barrier_rad * 2 + 12), pygame.SRCALPHA)
+            pygame.draw.circle(b_surf, (220, 25, 25, int(65 + 55 * e_pulse)), (barrier_rad + 6, barrier_rad + 6), barrier_rad, 4)
+            pygame.draw.circle(b_surf, (255, 140, 140, int(45 + 45 * e_pulse)), (barrier_rad + 6, barrier_rad + 6), barrier_rad - 6, 2)
+            screen.blit(b_surf, (int(b["x"] - barrier_rad - 6) + shake_x, int(b["y"] - be_feet * 0.6 - barrier_rad - 6) + shake_y))
+
+            inv_txt = font_stun_banner.render("⚡ MAGISTRATE ENRAGING — INVULNERABLE ⚡", True, (255, 70, 70))
+            inv_shadow = font_stun_banner.render("⚡ MAGISTRATE ENRAGING — INVULNERABLE ⚡", True, (20, 0, 0))
+            inv_rect = inv_txt.get_rect(center=(int(b["x"]) + shake_x, int(b["y"] - boss_h * 1.15) + shake_y))
+            screen.blit(inv_shadow, (inv_rect.x + 2, inv_rect.y + 2))
+            screen.blit(inv_txt, inv_rect)
+
         if b["is_stunned"]:
             st_text = font_stun_banner.render("★ POSTURE BROKEN — CRITICAL STRIKE! ★", True, (255, 220, 60))
             st_shadow = font_stun_banner.render("★ POSTURE BROKEN — CRITICAL STRIKE! ★", True, (20, 10, 5))
@@ -1795,39 +2757,42 @@ while running:
         overlay.fill((14, 10, 6, 215))
         screen.blit(overlay, (0, 0))
 
-        box = pygame.Rect((W - int(W * 0.64)) // 2, int(H * 0.16), int(W * 0.64), int(H * 0.70))
+        box = pygame.Rect((W - int(W * 0.68)) // 2, int(H * 0.12), int(W * 0.68), int(H * 0.76))
         draw_feudal_panel(screen, box, border_col=(212, 163, 75), bg_col=(20, 14, 10, 245), gold_corners=True)
 
         rw_title = font_end_title.render("ROUND WON", True, (255, 220, 95))
         rw_shadow = font_end_title.render("ROUND WON", True, (20, 10, 5))
-        rw_rect = rw_title.get_rect(center=(W // 2, int(H * 0.26)))
+        rw_rect = rw_title.get_rect(center=(W // 2, int(H * 0.20)))
         screen.blit(rw_shadow, (rw_rect.x + 3, rw_rect.y + 3))
         screen.blit(rw_title, rw_rect)
 
         sub_str = f"Great General Zhao claims Round {current_round}! The next round is starting..."
         rw_sub = font_end_sub.render(sub_str, True, (240, 230, 200))
-        screen.blit(rw_sub, rw_sub.get_rect(center=(W // 2, int(H * 0.35))))
+        screen.blit(rw_sub, rw_sub.get_rect(center=(W // 2, int(H * 0.28))))
 
         score_info = f"Current Match Score: Zhao {player_round_wins} — {boss_round_wins} Hollow Magistrate"
         rw_score = font_bar_val.render(score_info, True, (215, 185, 110))
-        screen.blit(rw_score, rw_score.get_rect(center=(W // 2, int(H * 0.40))))
+        screen.blit(rw_score, rw_score.get_rect(center=(W // 2, int(H * 0.34))))
 
-        draw_crossed_swords(screen, W // 2, int(H * 0.46), radius=int(H * 0.038))
+        draw_crossed_swords(screen, W // 2, int(H * 0.40), radius=int(H * 0.032))
 
         draw_button(screen, btn_continue_rect, f"CONTINUE TO ROUND {current_round + 1}", btn_continue_rect.collidepoint(mouse_pos), primary_col=(35, 120, 50))
-        draw_button(screen, btn_reset_rect, "RESET MATCH", btn_reset_rect.collidepoint(mouse_pos), primary_col=(130, 32, 28))
+        draw_button(screen, btn_restart_boss_rect, "RESTART BOSS FIGHT", btn_restart_boss_rect.collidepoint(mouse_pos), primary_col=(140, 32, 28))
+        draw_button(screen, btn_restart_game_rect, "RESTART ENTIRE GAME (PAGODA)", btn_restart_game_rect.collidepoint(mouse_pos), primary_col=(95, 30, 26))
         draw_button(screen, btn_menu_rect, "MAIN MENU", btn_menu_rect.collidepoint(mouse_pos), primary_col=(35, 30, 28))
 
-        hint = font_bar_val.render("Press [ENTER] or [SPACE] to Continue  |  Press [R] to Reset Match  |  Press [ESC] for Menu", True, (200, 190, 160))
-        screen.blit(hint, hint.get_rect(center=(W // 2, int(H * 0.78))))
+        hint = font_bar_val.render("Press [ENTER] to Continue  |  [R] Restart Boss  |  [G] Restart Entire Game  |  [ESC] Menu", True, (200, 190, 160))
+        screen.blit(hint, hint.get_rect(center=(W // 2, int(H * 0.77))))
 
         if mouse_clicked:
             if btn_continue_rect.collidepoint(mouse_pos):
                 start_next_round()
-            elif btn_reset_rect.collidepoint(mouse_pos):
+            elif btn_restart_boss_rect.collidepoint(mouse_pos):
                 reset_full_match()
+            elif btn_restart_game_rect.collidepoint(mouse_pos):
+                reset_entire_game()
             elif btn_menu_rect.collidepoint(mouse_pos):
-                reset_full_match()
+                reset_entire_game()
                 game_state = "MENU"
 
     # -----------------------------------------------------------------------
@@ -1838,38 +2803,41 @@ while running:
         overlay.fill((25, 6, 6, 225))
         screen.blit(overlay, (0, 0))
 
-        box = pygame.Rect((W - int(W * 0.64)) // 2, int(H * 0.16), int(W * 0.64), int(H * 0.70))
+        box = pygame.Rect((W - int(W * 0.68)) // 2, int(H * 0.12), int(W * 0.68), int(H * 0.76))
         draw_feudal_panel(screen, box, border_col=(212, 163, 75), bg_col=(22, 10, 10, 245), gold_corners=True)
 
         bb_title = font_bounce_back.render("BOUNCE BACK", True, (255, 215, 80))
         bb_shadow = font_bounce_back.render("BOUNCE BACK", True, (30, 0, 0))
-        bb_rect = bb_title.get_rect(center=(W // 2, int(H * 0.26)))
+        bb_rect = bb_title.get_rect(center=(W // 2, int(H * 0.20)))
         screen.blit(bb_shadow, (bb_rect.x + 4, bb_rect.y + 4))
         screen.blit(bb_title, bb_rect)
 
         bb_sub = font_end_sub.render(f"General Zhao fell in Round {current_round}! Play again to receive an HP Buff (+30 Max HP)!", True, (240, 225, 200))
-        screen.blit(bb_sub, bb_sub.get_rect(center=(W // 2, int(H * 0.35))))
+        screen.blit(bb_sub, bb_sub.get_rect(center=(W // 2, int(H * 0.28))))
 
         perk_msg = f"Perk Granted: Max HP boosted from 100 to 130 for Round {current_round + 1}!"
         bb_perk = font_bar_val.render(perk_msg, True, (110, 245, 130))
-        screen.blit(bb_perk, bb_perk.get_rect(center=(W // 2, int(H * 0.40))))
+        screen.blit(bb_perk, bb_perk.get_rect(center=(W // 2, int(H * 0.34))))
 
-        draw_crossed_swords(screen, W // 2, int(H * 0.46), radius=int(H * 0.038))
+        draw_crossed_swords(screen, W // 2, int(H * 0.40), radius=int(H * 0.032))
 
         draw_button(screen, btn_continue_rect, f"PLAY AGAIN WITH BUFF (ROUND {current_round + 1})", btn_continue_rect.collidepoint(mouse_pos), primary_col=(160, 30, 26))
-        draw_button(screen, btn_reset_rect, "RESET MATCH", btn_reset_rect.collidepoint(mouse_pos), primary_col=(110, 28, 24))
+        draw_button(screen, btn_restart_boss_rect, "RESTART BOSS FIGHT", btn_restart_boss_rect.collidepoint(mouse_pos), primary_col=(140, 32, 28))
+        draw_button(screen, btn_restart_game_rect, "RESTART ENTIRE GAME (PAGODA)", btn_restart_game_rect.collidepoint(mouse_pos), primary_col=(95, 30, 26))
         draw_button(screen, btn_menu_rect, "MAIN MENU", btn_menu_rect.collidepoint(mouse_pos), primary_col=(35, 30, 28))
 
-        hint = font_bar_val.render("Press [ENTER] or [SPACE] to Play Again  |  Press [R] to Reset Match  |  Press [ESC] for Menu", True, (210, 180, 180))
-        screen.blit(hint, hint.get_rect(center=(W // 2, int(H * 0.78))))
+        hint = font_bar_val.render("Press [ENTER] to Play Again  |  [R] Restart Boss  |  [G] Restart Entire Game  |  [ESC] Menu", True, (210, 180, 180))
+        screen.blit(hint, hint.get_rect(center=(W // 2, int(H * 0.77))))
 
         if mouse_clicked:
             if btn_continue_rect.collidepoint(mouse_pos):
                 start_next_round()
-            elif btn_reset_rect.collidepoint(mouse_pos):
+            elif btn_restart_boss_rect.collidepoint(mouse_pos):
                 reset_full_match()
+            elif btn_restart_game_rect.collidepoint(mouse_pos):
+                reset_entire_game()
             elif btn_menu_rect.collidepoint(mouse_pos):
-                reset_full_match()
+                reset_entire_game()
                 game_state = "MENU"
 
     # -----------------------------------------------------------------------
@@ -1880,38 +2848,41 @@ while running:
         overlay.fill((30, 4, 4, 230))
         screen.blit(overlay, (0, 0))
 
-        box = pygame.Rect((W - int(W * 0.64)) // 2, int(H * 0.16), int(W * 0.64), int(H * 0.70))
+        box = pygame.Rect((W - int(W * 0.68)) // 2, int(H * 0.12), int(W * 0.68), int(H * 0.76))
         draw_feudal_panel(screen, box, border_col=(255, 60, 60), bg_col=(24, 8, 8, 245), gold_corners=True)
 
         fbb_title = font_bounce_back.render("FINAL BOUNCE BACK", True, (255, 80, 60))
         fbb_shadow = font_bounce_back.render("FINAL BOUNCE BACK", True, (20, 0, 0))
-        fbb_rect = fbb_title.get_rect(center=(W // 2, int(H * 0.26)))
+        fbb_rect = fbb_title.get_rect(center=(W // 2, int(H * 0.20)))
         screen.blit(fbb_shadow, (fbb_rect.x + 4, fbb_rect.y + 4))
         screen.blit(fbb_title, fbb_rect)
 
         fbb_sub = font_end_sub.render(f"On the brink! Play again to receive Movement Speed & Attack Speed Buffs!", True, (255, 220, 200))
-        screen.blit(fbb_sub, fbb_sub.get_rect(center=(W // 2, int(H * 0.35))))
+        screen.blit(fbb_sub, fbb_sub.get_rect(center=(W // 2, int(H * 0.28))))
 
         perk_msg = f"Perks Active: +30 Max HP  •  +25% Movement Speed  •  +25% Attack Speed!"
         fbb_perk = font_bar_val.render(perk_msg, True, (100, 240, 255))
-        screen.blit(fbb_perk, fbb_perk.get_rect(center=(W // 2, int(H * 0.40))))
+        screen.blit(fbb_perk, fbb_perk.get_rect(center=(W // 2, int(H * 0.34))))
 
-        draw_crossed_swords(screen, W // 2, int(H * 0.46), radius=int(H * 0.038))
+        draw_crossed_swords(screen, W // 2, int(H * 0.40), radius=int(H * 0.032))
 
         draw_button(screen, btn_continue_rect, f"PLAY AGAIN WITH BUFFS (ROUND {current_round + 1})", btn_continue_rect.collidepoint(mouse_pos), primary_col=(175, 30, 26))
-        draw_button(screen, btn_reset_rect, "RESET MATCH", btn_reset_rect.collidepoint(mouse_pos), primary_col=(110, 28, 24))
+        draw_button(screen, btn_restart_boss_rect, "RESTART BOSS FIGHT", btn_restart_boss_rect.collidepoint(mouse_pos), primary_col=(140, 32, 28))
+        draw_button(screen, btn_restart_game_rect, "RESTART ENTIRE GAME (PAGODA)", btn_restart_game_rect.collidepoint(mouse_pos), primary_col=(95, 30, 26))
         draw_button(screen, btn_menu_rect, "MAIN MENU", btn_menu_rect.collidepoint(mouse_pos), primary_col=(35, 30, 28))
 
-        hint = font_bar_val.render("Press [ENTER] or [SPACE] to Play Again  |  Press [R] to Reset Match  |  Press [ESC] for Menu", True, (220, 180, 180))
-        screen.blit(hint, hint.get_rect(center=(W // 2, int(H * 0.78))))
+        hint = font_bar_val.render("Press [ENTER] to Play Again  |  [R] Restart Boss  |  [G] Restart Entire Game  |  [ESC] Menu", True, (220, 180, 180))
+        screen.blit(hint, hint.get_rect(center=(W // 2, int(H * 0.77))))
 
         if mouse_clicked:
             if btn_continue_rect.collidepoint(mouse_pos):
                 start_next_round()
-            elif btn_reset_rect.collidepoint(mouse_pos):
+            elif btn_restart_boss_rect.collidepoint(mouse_pos):
                 reset_full_match()
+            elif btn_restart_game_rect.collidepoint(mouse_pos):
+                reset_entire_game()
             elif btn_menu_rect.collidepoint(mouse_pos):
-                reset_full_match()
+                reset_entire_game()
                 game_state = "MENU"
 
     # -----------------------------------------------------------------------
@@ -1922,36 +2893,39 @@ while running:
         overlay.fill((30, 5, 5, 235))
         screen.blit(overlay, (0, 0))
 
-        box = pygame.Rect((W - int(W * 0.64)) // 2, int(H * 0.16), int(W * 0.64), int(H * 0.70))
+        box = pygame.Rect((W - int(W * 0.68)) // 2, int(H * 0.12), int(W * 0.68), int(H * 0.76))
         draw_feudal_panel(screen, box, border_col=(180, 32, 28), bg_col=(24, 8, 8, 250), gold_corners=True)
 
         d_title = font_end_title.render("THE MAGISTRATE WINS", True, (245, 45, 45))
         d_shadow = font_end_title.render("THE MAGISTRATE WINS", True, (15, 0, 0))
-        d_rect = d_title.get_rect(center=(W // 2, int(H * 0.26)))
+        d_rect = d_title.get_rect(center=(W // 2, int(H * 0.20)))
         screen.blit(d_shadow, (d_rect.x + 4, d_rect.y + 4))
         screen.blit(d_title, d_rect)
 
         d_sub = font_end_sub.render(f"The Hollow Magistrate has claimed 3 rounds to conquer the match! Will you try again?", True, (235, 200, 200))
-        screen.blit(d_sub, d_sub.get_rect(center=(W // 2, int(H * 0.35))))
+        screen.blit(d_sub, d_sub.get_rect(center=(W // 2, int(H * 0.28))))
 
         score_info = f"Final Score: Hollow Magistrate {boss_round_wins} — {player_round_wins} Great General Zhao"
         d_score = font_bar_val.render(score_info, True, (215, 120, 110))
-        screen.blit(d_score, d_score.get_rect(center=(W // 2, int(H * 0.40))))
+        screen.blit(d_score, d_score.get_rect(center=(W // 2, int(H * 0.34))))
 
-        draw_crossed_swords(screen, W // 2, int(H * 0.46), radius=int(H * 0.038))
+        draw_crossed_swords(screen, W // 2, int(H * 0.40), radius=int(H * 0.032))
 
-        draw_button(screen, btn_continue_rect, "TRY AGAIN (RESET MATCH)", btn_continue_rect.collidepoint(mouse_pos), primary_col=(175, 30, 26))
-        draw_button(screen, btn_reset_rect, "NEW GAME", btn_reset_rect.collidepoint(mouse_pos), primary_col=(110, 28, 24))
+        draw_button(screen, btn_continue_rect, "TRY AGAIN (NEW MATCH)", btn_continue_rect.collidepoint(mouse_pos), primary_col=(175, 30, 26))
+        draw_button(screen, btn_restart_boss_rect, "RESTART BOSS FIGHT", btn_restart_boss_rect.collidepoint(mouse_pos), primary_col=(140, 32, 28))
+        draw_button(screen, btn_restart_game_rect, "RESTART ENTIRE GAME (PAGODA)", btn_restart_game_rect.collidepoint(mouse_pos), primary_col=(95, 30, 26))
         draw_button(screen, btn_menu_rect, "MAIN MENU", btn_menu_rect.collidepoint(mouse_pos), primary_col=(35, 30, 28))
 
-        hint = font_bar_val.render("Press [R] or [ENTER] to Try Again  |  Press [ESC] for Main Menu", True, (200, 160, 160))
-        screen.blit(hint, hint.get_rect(center=(W // 2, int(H * 0.78))))
+        hint = font_bar_val.render("Press [ENTER] to Try Again  |  [R] Restart Boss  |  [G] Restart Entire Game  |  [ESC] Menu", True, (200, 160, 160))
+        screen.blit(hint, hint.get_rect(center=(W // 2, int(H * 0.77))))
 
         if mouse_clicked:
-            if btn_continue_rect.collidepoint(mouse_pos) or btn_reset_rect.collidepoint(mouse_pos):
+            if btn_continue_rect.collidepoint(mouse_pos) or btn_restart_boss_rect.collidepoint(mouse_pos):
                 reset_full_match()
+            elif btn_restart_game_rect.collidepoint(mouse_pos):
+                reset_entire_game()
             elif btn_menu_rect.collidepoint(mouse_pos):
-                reset_full_match()
+                reset_entire_game()
                 game_state = "MENU"
 
     # -----------------------------------------------------------------------
@@ -1962,36 +2936,39 @@ while running:
         overlay.fill((14, 10, 6, 220))
         screen.blit(overlay, (0, 0))
 
-        box = pygame.Rect((W - int(W * 0.64)) // 2, int(H * 0.16), int(W * 0.64), int(H * 0.70))
+        box = pygame.Rect((W - int(W * 0.68)) // 2, int(H * 0.12), int(W * 0.68), int(H * 0.76))
         draw_feudal_panel(screen, box, border_col=(212, 163, 75), bg_col=(20, 14, 10, 250), gold_corners=True)
 
         v_title = font_end_title.render("MATCH VICTORY", True, (255, 220, 95))
         v_shadow = font_end_title.render("MATCH VICTORY", True, (20, 10, 5))
-        v_rect = v_title.get_rect(center=(W // 2, int(H * 0.26)))
+        v_rect = v_title.get_rect(center=(W // 2, int(H * 0.20)))
         screen.blit(v_shadow, (v_rect.x + 3, v_rect.y + 3))
         screen.blit(v_title, v_rect)
 
         v_sub = font_end_sub.render(f"Great General Zhao claims match triumph ({player_round_wins} - {boss_round_wins})! The Magistrate is vanquished!", True, (240, 230, 200))
-        screen.blit(v_sub, v_sub.get_rect(center=(W // 2, int(H * 0.35))))
+        screen.blit(v_sub, v_sub.get_rect(center=(W // 2, int(H * 0.28))))
 
         score_info = f"Final Score: Great General Zhao {player_round_wins} — {boss_round_wins} The Hollow Magistrate"
         v_score = font_bar_val.render(score_info, True, (212, 185, 90))
-        screen.blit(v_score, v_score.get_rect(center=(W // 2, int(H * 0.40))))
+        screen.blit(v_score, v_score.get_rect(center=(W // 2, int(H * 0.34))))
 
-        draw_crossed_swords(screen, W // 2, int(H * 0.46), radius=int(H * 0.038))
+        draw_crossed_swords(screen, W // 2, int(H * 0.40), radius=int(H * 0.032))
 
         draw_button(screen, btn_continue_rect, "PLAY AGAIN (NEW MATCH)", btn_continue_rect.collidepoint(mouse_pos), primary_col=(35, 125, 55))
-        draw_button(screen, btn_reset_rect, "RESET MATCH", btn_reset_rect.collidepoint(mouse_pos), primary_col=(130, 32, 28))
+        draw_button(screen, btn_restart_boss_rect, "RESTART BOSS FIGHT", btn_restart_boss_rect.collidepoint(mouse_pos), primary_col=(140, 32, 28))
+        draw_button(screen, btn_restart_game_rect, "RESTART ENTIRE GAME (PAGODA)", btn_restart_game_rect.collidepoint(mouse_pos), primary_col=(95, 30, 26))
         draw_button(screen, btn_menu_rect, "MAIN MENU", btn_menu_rect.collidepoint(mouse_pos), primary_col=(35, 30, 28))
 
-        hint = font_bar_val.render("Press [R] or [ENTER] to Play Again  |  Press [ESC] for Main Menu", True, (200, 190, 160))
-        screen.blit(hint, hint.get_rect(center=(W // 2, int(H * 0.78))))
+        hint = font_bar_val.render("Press [ENTER] to Play Again  |  [R] Restart Boss  |  [G] Restart Entire Game  |  [ESC] Menu", True, (200, 190, 160))
+        screen.blit(hint, hint.get_rect(center=(W // 2, int(H * 0.77))))
 
         if mouse_clicked:
-            if btn_continue_rect.collidepoint(mouse_pos) or btn_reset_rect.collidepoint(mouse_pos):
+            if btn_continue_rect.collidepoint(mouse_pos) or btn_restart_boss_rect.collidepoint(mouse_pos):
                 reset_full_match()
+            elif btn_restart_game_rect.collidepoint(mouse_pos):
+                reset_entire_game()
             elif btn_menu_rect.collidepoint(mouse_pos):
-                reset_full_match()
+                reset_entire_game()
                 game_state = "MENU"
 
     # Display Flip & Tick
